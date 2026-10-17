@@ -4,11 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SWDA ETF Tracker</title>
-    <!-- Tailwind CSS per uno stile moderno e pulito -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js per il grafico dei prezzi -->
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Libreria ufficiale Supabase per JS -->
+    <!-- Plugin Zoom per Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+    <!-- Libreria ufficiale Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
@@ -20,7 +22,13 @@
         </header>
 
         <!-- Sezione Grafico -->
-        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8 relative">
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-xs text-gray-400 font-medium">Usa la rotellina per lo zoom • Trascina per spostarti</span>
+                <button id="reset-zoom" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                    Reset Zoom
+                </button>
+            </div>
             <canvas id="priceChart" width="400" height="150"></canvas>
         </div>
 
@@ -53,22 +61,44 @@
         const SUPABASE_ANON_KEY = 'sb_publishable_mMYcQfDTg7ziPFS_Nrb5PA_4I8KVBet';
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let chartInstance = null; // Riferimento globale al grafico per gestire il reset
 
         async function fetchData() {
-            // .range(0, 9999) dice a Supabase di scaricare fino a 10.000 record (aggira il limite default di 1000)
-            const { data, error } = await supabaseClient
-                .from('prices')
-                .select('*')
-                .order('date', { ascending: false })
-                .range(0, 9999); 
+            let allPrices = [];
+            let page = 0;
+            const pageSize = 1000;
+            let keepFetching = true;
 
-            if (error) {
-                console.error('Errore nel recupero dati:', error);
-                document.getElementById('record-count').innerText = 'Errore di caricamento';
-                return;
+            // Paginazione automatica per scaricare TUTTI i dati oltre il limite di 1000
+            while (keepFetching) {
+                const from = page * pageSize;
+                const to = from + pageSize - 1;
+
+                const { data, error } = await supabaseClient
+                    .from('prices')
+                    .select('*')
+                    .order('date', { ascending: false })
+                    .range(from, to);
+
+                if (error) {
+                    console.error('Errore nel recupero dati:', error);
+                    document.getElementById('record-count').innerText = 'Errore di caricamento';
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    allPrices = allPrices.concat(data);
+                    if (data.length < pageSize) {
+                        keepFetching = false;
+                    } else {
+                        page++;
+                    }
+                } else {
+                    keepFetching = false;
+                }
             }
 
-            renderUI(data);
+            renderUI(allPrices);
         }
 
         function renderUI(data) {
@@ -93,7 +123,7 @@
                 tbody.appendChild(tr);
             });
 
-            // Prepara i dati per il grafico (invertiti per cronologia temporale crescente)
+            // Prepara i dati per il grafico (cronologia temporale crescente)
             const chartData = [...data].reverse();
             const labels = chartData.map(d => d.date);
             const prices = chartData.map(d => Number(d.price));
@@ -103,7 +133,12 @@
 
         function renderChart(labels, prices) {
             const ctx = document.getElementById('priceChart').getContext('2d');
-            new Chart(ctx, {
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            chartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -115,14 +150,29 @@
                         borderWidth: 2,
                         fill: true,
                         tension: 0.1,
-                        pointRadius: 0,         // Nasconde i punti/cerchi individuali
-                        pointHoverRadius: 5     // Mostra il punto solo al passaggio del mouse
+                        pointRadius: 0,
+                        pointHoverRadius: 5
                     }]
                 },
                 options: {
                     responsive: true,
                     plugins: {
-                        legend: { display: false }
+                        legend: { display: false },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x' // Permette lo spostamento sull'asse orizzontale
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true // Zoom con la rotellina del mouse
+                                },
+                                pinch: {
+                                    enabled: true // Zoom con due dita su smartphone
+                                },
+                                mode: 'x' // Zoom solo sull'asse delle date (orizzontale)
+                            }
+                        }
                     },
                     scales: {
                         y: { grid: { color: '#f3f4f6' } },
@@ -131,6 +181,13 @@
                 }
             });
         }
+
+        // Event listener per il pulsante di Reset Zoom
+        document.getElementById('reset-zoom').addEventListener('click', () => {
+            if (chartInstance) {
+                chartInstance.resetZoom();
+            }
+        });
 
         // Avvia il caricamento
         fetchData();
