@@ -57,7 +57,7 @@
 
         async function fetchData() {
             const { data, error } = await supabaseClient
-                .from('etf_prices')
+                .from('prices')
                 .select('*')
                 .order('date', { ascending: false }); // Dal più recente al meno recente
 
