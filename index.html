@@ -49,17 +49,18 @@
 
     <script>
         // --- CONFIGURAZIONE SUPABASE ---
-        // Sostituisci questi due valori con i tuoi dati reali presi da Supabase (Project Settings > API)
         const SUPABASE_URL = 'https://wbwwjwfhgvrwtoaitleh.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_mMYcQfDTg7ziPFS_Nrb5PA_4I8KVBet';
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         async function fetchData() {
+            // .range(0, 9999) dice a Supabase di scaricare fino a 10.000 record (aggira il limite default di 1000)
             const { data, error } = await supabaseClient
                 .from('prices')
                 .select('*')
-                .order('date', { ascending: false }); // Dal più recente al meno recente
+                .order('date', { ascending: false })
+                .range(0, 9999); 
 
             if (error) {
                 console.error('Errore nel recupero dati:', error);
@@ -113,7 +114,9 @@
                         backgroundColor: 'rgba(37, 99, 235, 0.05)',
                         borderWidth: 2,
                         fill: true,
-                        tension: 0.1
+                        tension: 0.1,
+                        pointRadius: 0,         // Nasconde i punti/cerchi individuali
+                        pointHoverRadius: 5     // Mostra il punto solo al passaggio del mouse
                     }]
                 },
                 options: {
