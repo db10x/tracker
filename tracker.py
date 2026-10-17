@@ -29,7 +29,7 @@ def save_to_db(date_str, price):
 
   # Inserisce il record. Se esiste già per la stessa data, lo aggiorna (UPSERT)
   query = """
-        INSERT INTO etf_prices (date, ticker, price)
+        INSERT INTO prices (date, ticker, price)
         VALUES (%s, %s, %s)
         ON CONFLICT (date) 
         DO UPDATE SET price = EXCLUDED.price;
