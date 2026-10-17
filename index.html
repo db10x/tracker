@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SWDA ETF Tracker</title>
+    <!-- Tailwind CSS per uno stile moderno e pulito -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js per il grafico dei prezzi -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Libreria ufficiale Supabase per JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+    <div class="max-w-4xl mx-auto p-6">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-blue-600">iShares Core MSCI World (SWDA)</h1>
+            <p class="text-gray-500 mt-2">Storico dei prezzi di chiusura registrati automaticamente</p>
+        </header>
+
+        <!-- Sezione Grafico -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
+            <canvas id="priceChart" width="400" height="150"></canvas>
+        </div>
+
+        <!-- Sezione Tabella Dati -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                <h2 class="font-semibold text-lg text-gray-700">Ulteriori registrazioni</h2>
+                <span id="record-count" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-medium">Caricamento...</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-400 text-xs uppercase tracking-wider">
+                            <th class="py-3 px-6 font-semibold">Data</th>
+                            <th class="py-3 px-6 font-semibold">Ticker</th>
+                            <th class="py-3 px-6 font-semibold text-right">Prezzo (€)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body" class="divide-y divide-gray-100 text-sm">
+                        <!-- I dati verranno inseriti qui da JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURAZIONE SUPABASE ---
+        // Sostituisci questi due valori con i tuoi dati reali presi da Supabase (Project Settings > API)
+        const SUPABASE_URL = 'https://TUO-PROGETTO.supabase.co';
+        const SUPABASE_ANON_KEY = 'TUA-ANON-KEY-PUBBLICA';
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function fetchData() {
+            const { data, error } = await supabaseClient
+                .from('etf_prices')
+                .select('*')
+                .order('date', { ascending: false }); // Dal più recente al meno recente
+
+            if (error) {
+                console.error('Errore nel recupero dati:', error);
+                document.getElementById('record-count').innerText = 'Errore di caricamento';
+                return;
+            }
+
+            renderUI(data);
+        }
+
+        function renderUI(data) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+            document.getElementById('record-count').innerText = `${data.length} record totali`;
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="py-4 px-6 text-center text-gray-400">Nessun dato presente nel database.</td></tr>`;
+                return;
+            }
+
+            // Popola la tabella
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50 transition-colors';
+                tr.innerHTML = `
+                    <td class="py-4 px-6 font-medium text-gray-900">${row.date}</td>
+                    <td class="py-4 px-6 text-gray-500">${row.ticker}</td>
+                    <td class="py-4 px-6 text-right font-semibold text-blue-600">${Number(row.price).toFixed(2)} €</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Prepara i dati per il grafico (invertiti per cronologia temporale crescente)
+            const chartData = [...data].reverse();
+            const labels = chartData.map(d => d.date);
+            const prices = chartData.map(d => Number(d.price));
+
+            renderChart(labels, prices);
+        }
+
+        function renderChart(labels, prices) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Prezzo SWDA (€)',
+                        data: prices,
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.05)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { grid: { color: '#f3f4f6' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // Avvia il caricamento
+        fetchData();
+    </script>
+</body>
+</html>
