@@ -1,11 +1,11 @@
 name: Daily ETF Tracker
 
 on:
+
   schedule:
-    # Esegue lo script ogni giorno alle 18:30 UTC (circa le 19:30/20:30 italiane a seconda dell'ora legale)
-    - cron: '30 18 * * 1-5'
-  # Permette anche di avviarlo manualmente dalla tab "Actions" di GitHub
-  workflow_dispatch:
+    # Esegue tutti i giorni della settimana alle 18:00 UTC (ogni giorno, 7 giorni su 7)
+    - cron: '0 18 * * *'
+  workflow_dispatch: # Mantiene la possibilità di avviarlo manualmente quando vuoi
 
 jobs:
   run-tracker:
