@@ -11,7 +11,7 @@ Una volta dentro la dashboard, vai sull'icona del database (SQL Editor nel menu 
 Incolla questo codice SQL per creare la tabella che conterrà i tuoi dati e premi "Run":
 
 SQL
-create table etf_prices (
+create table prices (
     id serial primary key,
     date date not null unique,
     ticker text not null,
@@ -57,7 +57,7 @@ Special symbols in passwords#
 If you use special symbols in your Postgres password, you must remember to [percent-encode](https://en.wikipedia.org/wiki/Percent-encoding) your password later if using the Postgres connection string, for example, postgresql://postgres.projectref:p%3Dword@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 
 ## Passo 5: Creare l'automazione (GitHub Action)
-Ora diciamo a GitHub quando far girare lo script. Creeremo una cartella e un file di configurazione.
+Ora diciamo a GitHub quando far girare lo script. Il workflow pianifica l'esecuzione ogni giorno alle 18:00 UTC, weekend inclusi, e consente anche l'avvio manuale. Creeremo una cartella e un file di configurazione.
 Torna nella pagina principale del tuo repository e clicca su "Add file" > "Create new file".
 Come nome del file scrivi esattamente: .github/workflows/tracker.yml (creerà automaticamente la struttura di cartelle).
 Incolla il codice YAML
@@ -69,4 +69,4 @@ Nel tuo repository GitHub, clicca sulla tab Actions in alto.
 Sulla sinistra vedrai il flusso di lavoro chiamato Daily ETF Tracker. Cliccaci sopra.
 Sulla destra, vedrai un pulsante con scritto "Run workflow". Cliccaci e conferma cliccando sul bottone verde.
 Dopo qualche secondo, vedrai partire il job. Cliccaci sopra per vedere i log in tempo reale: se vedi il messaggio "Salvato con successo...", significa che l'orologio svizzero del cloud ha fatto il suo dovere!
-Se vai ora nella tabella del tuo database su Supabase (Table Editor > etf_prices), troverai la riga con il prezzo del SWDA. Da questo momento in poi, lo script si eseguirà da solo ogni giorno feriale alla sera.
+Se vai ora nella tabella del tuo database su Supabase (Table Editor > prices), troverai la riga con il prezzo del SWDA. Da questo momento in poi, lo script si eseguirà da solo ogni giorno alle 18:00 UTC, weekend inclusi.
