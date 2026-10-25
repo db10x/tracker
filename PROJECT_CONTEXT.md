@@ -7,7 +7,7 @@ Questa guida riassume lo stato del repository e le dipendenze tra codice e infra
 Il progetto registra e visualizza lo storico dei prezzi dei titoli elencati in `Anagrafica.csv`, usando per ciascuno il ticker Yahoo Finance della colonna `Ticker_yf`.
 
 1. Il workflow GitHub Actions `.github/workflows/tracker.yml` esegue `tracker.py` alle 18:00 UTC ogni giorno e può essere avviato anche manualmente.
-2. `tracker.py` legge tutti i ticker dalla colonna `Ticker_yf` di `Anagrafica.csv` e recupera da Yahoo Finance tramite `yfinance` il prezzo di chiusura più recente per ognuno, cercando nello storico degli ultimi cinque giorni.
+2. `tracker.py` legge tutti i ticker dalla colonna `Ticker_yf` di `Anagrafica.csv` e recupera da Yahoo Finance tramite `yfinance` il prezzo di chiusura del giorno corrente, richiedendo lo storico di un giorno.
 3. Lo script connette PostgreSQL su Supabase usando il secret Actions `DATABASE_URL` e inserisce o aggiorna il record del giorno.
 4. `index.html` interroga Supabase direttamente dal browser usando la chiave pubblica, carica i record a pagine e mostra un riepilogo per ticker con ultimo prezzo e variazione rispetto al record precedente, una tabella storica filtrabile e ordinabile e il grafico Chart.js.
 
@@ -18,8 +18,10 @@ Non ci sono backend applicativi o framework di build: la UI è una pagina static
 | File | Responsabilità |
 | --- | --- |
 | `tracker.py` | Recupero prezzo Yahoo Finance e upsert nel database PostgreSQL. |
+| `backfill_history.py` | Caricamento manuale dello storico Yahoo Finance completo disponibile per tutti i ticker dell'anagrafica. |
 | `index.html` | Pagina italiana con tabella storico, grafico, zoom e pan. |
-| `requirements.txt` | Dipendenze Python (`yfinance`, `psycopg2-binary`). |
+| `requirements.txt` | Dipendenze Python (`yfinance`, `psycopg2-binary`, `python-dotenv`). |
+| `.env.example` / `.gitignore` | Esempio della configurazione locale e protezione dei file `.env` dai commit. |
 | `.github/workflows/tracker.yml` | Pianificazione e avvio del job Python su GitHub Actions. |
 | `README.md` | Istruzioni manuali originali per configurare Supabase, repository e Actions. |
 
@@ -28,10 +30,12 @@ Non ci sono backend applicativi o framework di build: la UI è una pagina static
 ### Script Python
 
 - I ticker sono letti da `Anagrafica.csv` a ogni esecuzione; il file deve contenere la colonna `Ticker_yf` e usa `;` come separatore.
-- `get_etf_price()` legge `Ticker.history(period="5d")`, fallisce se non riceve dati e prende l'ultimo valore di `Close`.
-- La data salvata è `datetime.now().strftime("%Y-%m-%d")`, cioè la data corrente dell'ambiente di esecuzione, non la data della seduta a cui appartiene la chiusura recuperata. Nei fine settimana e nei giorni senza contrattazioni può quindi registrare lo stesso ultimo prezzo disponibile sotto date diverse.
+- `get_etf_price()` legge `Ticker.history(period="1d")` e restituisce il prezzo solo se Yahoo Finance fornisce una chiusura non nulla con data pari a oggi. Se non ci sono dati di oggi (per esempio nei giorni di borsa chiusa), il ticker viene saltato e non viene scritto nel database.
+- Lo script è  pianificato ogni giorno. Per i ticker disponibili, la data salvata è quella corrente dell'ambiente di esecuzione.
 - `save_to_db()` esegue un upsert sulla tabella `prices`, con conflitto sulla coppia `(date, ticker)`; in caso di conflitto aggiorna `price`.
 - All'avvio lo script verifica che `psycopg2` sia installato e che `DATABASE_URL` sia impostata; in caso contrario stampa un errore esplicito e termina con codice 1. `psycopg2-binary` è già dichiarato in `requirements.txt`. La connessione/cursore vengono chiusi solo nel percorso senza eccezioni.
+- `backfill_history.py` è uno script manuale separato: per ogni ticker usa `Ticker.history(start="2022-01-01", auto_adjust=False)`, registra i prezzi `Close` alle date effettive delle sedute dal 1° gennaio 2022 in poi e aggiorna i conflitti `(date, ticker)`. Le righe precedenti già presenti nel database non vengono cancellate. Scarica e valida tutti i ticker prima di effettuare un'unica transazione, così un errore di download non lascia un caricamento parziale.
+- Entrambi gli script caricano `DATABASE_URL` dal file `.env` nella cartella del progetto tramite `python-dotenv`, senza sovrascrivere un valore già presente nell'ambiente. `.env` è escluso da Git; `.env.example` contiene solo un URI segnaposto.
 
 ### Schema database atteso
 
@@ -71,9 +75,11 @@ La coppia `(date, ticker)` deve avere un vincolo `UNIQUE`, necessario a `ON CONF
 
 Il README guida la creazione manuale del progetto PostgreSQL su Supabase, della tabella `prices`, del repository GitHub, del secret Actions `DATABASE_URL` e del workflow. Specifica la pianificazione quotidiana alle 18:00 UTC, weekend inclusi, e suggerisce un test manuale dalla scheda Actions con verifica del record in Supabase. Le policy e le impostazioni effettive nei dashboard non sono verificabili dai soli file del repository.
 
+Per il caricamento iniziale, il README documenta l'esecuzione manuale di `backfill_history.py` da PowerShell con `DATABASE_URL`; lo script usa lo storico massimo disponibile su Yahoo Finance e scrive l'intero lotto in modo transazionale.
+
 ## Esecuzione e verifica
 
-Per eseguire localmente da PowerShell, installare le dipendenze con `python -m pip install -r requirements.txt`, impostare `DATABASE_URL` nell'ambiente e avviare `python tracker.py`; il README contiene i comandi. L'impostazione PowerShell vale per la finestra corrente. Non inserire la stringa di connessione nel repository o nella pagina HTML.
+Per eseguire localmente da PowerShell, installare le dipendenze con `python -m pip install -r requirements.txt`, creare `.env` a partire da `.env.example`, inserire `DATABASE_URL` e avviare `python tracker.py` o `python backfill_history.py`; i file `.env` sono ignorati da Git. Non inserire la stringa di connessione nel repository o nella pagina HTML.
 
 Al momento non sono presenti test automatizzati, file di configurazione di test, migrazioni database o workflow CI per test. Per una modifica al flusso dati verificare almeno: ticker e prezzo recuperati, schema e vincolo univoco, upsert idempotente, accesso anon in lettura e rendering nel browser.
 
@@ -81,7 +87,7 @@ Al momento non sono presenti test automatizzati, file di configurazione di test,
 
 - Mantenere coerenti i nomi tabella/colonne tra script, pagina, schema Supabase e README.
 - Per registrare più ticker nella stessa data, mantenere il vincolo composto `UNIQUE(date, ticker)` allineato con la clausola `ON CONFLICT(date, ticker)`.
-- Decidere esplicitamente se la data deve indicare il giorno di esecuzione o la data effettiva dell'ultima seduta. La logica attuale usa il giorno di esecuzione.
+- Il job giornaliero scrive solo ticker con dati Yahoo Finance datati nel giorno di esecuzione; in giornate senza contrattazioni non crea record per i ticker senza una quotazione odierna.
 - Valutare l'orario cron in UTC rispetto alle aspettative locali e ai cambi di ora legale; lo schedule GitHub non è espresso nel fuso italiano.
 - Qualunque modifica a schema, policy RLS o credenziali va applicata e verificata anche sul progetto Supabase remoto: il repository non contiene migrazioni né policy.
 - Evitare di committare segreti. Per cambiare accesso pubblico, usare la chiave publishable/anon con policy RLS minime e mantenere `DATABASE_URL` nei secret GitHub Actions.

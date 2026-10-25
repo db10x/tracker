@@ -80,10 +80,23 @@ Apri PowerShell nella cartella del progetto e installa le dipendenze usando lo s
 
 ```powershell
 python -m pip install -r requirements.txt
-$env:DATABASE_URL = "postgresql://postgres.wbwwjwfhgvrwtoaitleh:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
+Copy-Item .env.example .env
+notepad .env
 python tracker.py
 ```
 
-Sostituisci l'URI di esempio con la connection string del tuo database. `DATABASE_URL` impostata così vale solo per la finestra PowerShell corrente; non salvarla nel repository. Se `psycopg2` manca, lo script interrompe l'esecuzione indicando il comando per installare le dipendenze. Il file `Anagrafica.csv` deve rimanere nella stessa cartella di `tracker.py`.
+Nel file `.env`, sostituisci l'URI di esempio con la connection string del tuo database. Salva `.env` nella cartella del progetto: entrambi gli script lo caricano automaticamente e il file è escluso da Git. Non pubblicare né condividere questo file. Se `DATABASE_URL` è già definita nell'ambiente di Windows, ha la precedenza sul valore in `.env`. Se `psycopg2` manca, installa le dipendenze con il comando indicato sopra. Il file `Anagrafica.csv` deve rimanere nella stessa cartella degli script.
 
-per verificare che sia stata creata correttamente utilizzare $env:DATABASE_URL
+Il job giornaliero verifica che Yahoo Finance abbia una quotazione con data odierna per ciascun ticker. Se non ci sono dati (per esempio nei giorni di borsa chiusa), quel ticker viene saltato e il prezzo della seduta precedente non viene registrato con la data corrente; gli altri ticker con dati odierni vengono salvati normalmente.
+
+### Caricamento iniziale dello storico
+
+Per popolare la tabella `prices` con lo storico disponibile su Yahoo Finance per tutti i ticker in `Anagrafica.csv`, esegui manualmente `backfill_history.py` dalla cartella del progetto:
+
+```powershell
+python backfill_history.py
+```
+
+Lo script scarica le quotazioni di chiusura dal 1° gennaio 2022 in poi, usa la data effettiva della seduta e aggiorna eventuali record con la stessa coppia data/ticker. Non scarica né inserisce date precedenti; eventuali record precedenti già presenti nel database non vengono cancellati. Prima di scrivere nel database verifica che tutti i ticker abbiano dati; poi salva l'intero caricamento in un'unica transazione. Può quindi essere rilanciato senza creare righe duplicate. Richiede le stesse dipendenze e la stessa variabile `DATABASE_URL` dello script giornaliero.
+
+Per verificare che la variabile sia caricata puoi eseguire `$env:DATABASE_URL` in PowerShell; il valore salvato nel file locale viene letto all'avvio degli script.

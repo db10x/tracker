@@ -5,8 +5,10 @@ from datetime import datetime
 from pathlib import Path
 
 import yfinance as yf
+from dotenv import load_dotenv
 
-# Legge la stringa di connessione dalle variabili d'ambiente
+# Carica la configurazione locale senza sovrascrivere le variabili già impostate.
+load_dotenv(Path(__file__).with_name(".env"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
@@ -47,13 +49,23 @@ def get_etf_price(ticker):
     print(f"Recupero dati per {ticker}...")
     etf = yf.Ticker(ticker)
 
-    # Include l'ultima chiusura disponibile anche nei giorni senza contrattazioni.
-    df = etf.history(period="5d")
+    df = etf.history(period="1d")
     if df.empty:
-        raise ValueError(f"Nessun dato trovato per {ticker}")
+        print(f"Nessuna quotazione disponibile oggi per {ticker}; salto.")
+        return None
 
-    close_price = float(df["Close"].iloc[-1])
     today_date = datetime.now().strftime("%Y-%m-%d")
+    today_data = df.loc[df.index.strftime("%Y-%m-%d") == today_date]
+    if today_data.empty:
+        print(f"Nessuna quotazione disponibile oggi per {ticker}; salto.")
+        return None
+
+    today_closes = today_data["Close"].dropna()
+    if today_closes.empty:
+        print(f"Nessun prezzo di chiusura disponibile oggi per {ticker}; salto.")
+        return None
+
+    close_price = float(today_closes.iloc[-1])
 
     return today_date, close_price
 
@@ -86,7 +98,10 @@ if __name__ == "__main__":
             )
 
         for ticker in load_tickers():
-            date_str, price = get_etf_price(ticker)
+            result = get_etf_price(ticker)
+            if result is None:
+                continue
+            date_str, price = result
             save_to_db(date_str, ticker, price, db_driver)
     except Exception as e:
         print(f"Errore durante l'esecuzione: {e}")
