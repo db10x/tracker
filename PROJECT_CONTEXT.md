@@ -9,7 +9,7 @@ Il progetto registra e visualizza lo storico dei prezzi dei titoli elencati in `
 1. Il workflow GitHub Actions `.github/workflows/tracker.yml` esegue `tracker.py` alle 18:00 UTC ogni giorno e può essere avviato anche manualmente.
 2. `tracker.py` legge tutti i ticker dalla colonna `Ticker_yf` di `Anagrafica.csv` e recupera da Yahoo Finance tramite `yfinance` il prezzo di chiusura più recente per ognuno, cercando nello storico degli ultimi cinque giorni.
 3. Lo script connette PostgreSQL su Supabase usando il secret Actions `DATABASE_URL` e inserisce o aggiorna il record del giorno.
-4. `index.html` interroga Supabase direttamente dal browser usando la chiave pubblica, carica i record a pagine e mostra tabella e grafico Chart.js.
+4. `index.html` interroga Supabase direttamente dal browser usando la chiave pubblica, carica i record a pagine e mostra un riepilogo per ticker con ultimo prezzo e variazione rispetto al record precedente, una tabella storica filtrabile e ordinabile e il grafico Chart.js.
 
 Non ci sono backend applicativi o framework di build: la UI è una pagina statica autonoma e lo script è un job batch.
 
@@ -61,9 +61,11 @@ La coppia `(date, ticker)` deve avere un vincolo `UNIQUE`, necessario a `ON CONF
 - Il browser legge `prices`, seleziona tutte le colonne e ordina per `date` decrescente.
 - Il caricamento è paginato con batch da 1000 record usando `.range(from, to)` e continua fino a ricevere meno di 1000 righe.
 - Perché la lettura dal browser funzioni, Supabase deve consentire al ruolo anon la `SELECT` necessaria tramite impostazioni RLS/policy. Le policy effettive non sono presenti nel repository e vanno verificate nel progetto Supabase; non disabilitare RLS come scorciatoia.
-- L'errore di lettura è scritto in console e mostrato nel contatore. I record sono inseriti nel DOM componendo `innerHTML` con data, ticker e prezzo: se questi campi diventano modificabili da fonti non fidate, usare inserimento testuale sicuro invece di interpolarli come HTML.
-- Dipendenze browser caricate da CDN: Tailwind CSS, Chart.js, `chartjs-plugin-zoom` 2.2.0 e `@supabase/supabase-js` 2. Non è configurato un bundler o un sistema di pinning per tutte le librerie.
-- Il grafico mostra una serie per ticker in ordine cronologico crescente; zoom e pan sono limitati all'asse X e il pulsante reset richiama `resetZoom()`.
+- L'errore di lettura è scritto in console e mostrato nel contatore. Le righe delle tabelle sono costruite con elementi DOM e `textContent` per mostrare i dati senza interpretarli come HTML.
+- Dipendenze browser caricate da CDN: Tailwind CSS, Chart.js, Hammer.js 2.0.8 (richiesto dal pan), `chartjs-plugin-zoom` 2.2.0 e `@supabase/supabase-js` 2. Non è configurato un bundler o un sistema di pinning per tutte le librerie.
+- Il riepilogo mostra per ciascun ticker il prezzo più recente e la variazione percentuale rispetto al record con la data precedente; la variazione positiva è verde, quella negativa rossa e viene mostrato un trattino quando manca un confronto valido.
+- La tabella `Dati storici` consente di filtrare data, ticker o prezzo con una ricerca testuale e di ordinare ciascuna colonna selezionandone l'intestazione.
+- Il grafico mostra una serie per ticker in ordine cronologico crescente su un asse giornaliero continuo tra la prima e l'ultima data, anche quando mancano record per alcuni giorni; le linee collegano i prezzi disponibili attraverso i giorni vuoti. All'avvio è visibile solo la prima serie e la legenda usa marcatori quadrati compatti. I pulsanti `1M`, `1Y`, `YTD` e `Tutto` mostrano rispettivamente gli ultimi 30 o 365 giorni, il periodo dall'inizio dell'anno (o dall'ultimo record precedente disponibile) oppure tutto lo storico. La variazione percentuale tra primo e ultimo prezzo visibili è mostrata per ogni serie attiva e si aggiorna con zoom, pan e visibilità delle serie. Le etichette dell'asse X si adattano allo zoom: giorni e marcatori mensili/annuali da vicino, solo mese/anno sulle viste ampie; gli intervalli sono calcolati sulle date calendariali, non sulla presenza di record. Il grafico è più alto per impostazione predefinita e il riquadro può essere espanso a schermo intero. L'area sensibile dei punti è estesa per facilitare i tooltip; zoom e pan sono limitati all'asse X.
 
 ## Setup e operatività descritti nel README
 

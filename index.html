@@ -8,10 +8,33 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Hammer.js richiesto dal plugin Zoom per il pan tramite trascinamento -->
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     <!-- Plugin Zoom per Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
     <!-- Libreria ufficiale Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        #chart-canvas-container {
+            height: 390px;
+            position: relative;
+        }
+
+        #chart-section:fullscreen {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            overflow: auto;
+            border-radius: 0;
+        }
+
+        #chart-section:fullscreen #chart-canvas-container {
+            flex: 1;
+            height: auto;
+            min-height: 0;
+        }
+    </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
 
@@ -21,30 +44,87 @@
             <p class="text-gray-500 mt-2">Storico dei prezzi di chiusura dei titoli monitorati</p>
         </header>
 
-        <!-- Sezione Grafico -->
-        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8 relative">
-            <div class="flex justify-between items-center mb-4">
-                <span class="text-xs text-gray-400 font-medium">Usa la rotellina per lo zoom • Trascina per spostarti</span>
-                <button id="reset-zoom" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                    Reset Zoom
-                </button>
-            </div>
-            <canvas id="priceChart" width="400" height="150"></canvas>
-        </div>
-
-        <!-- Sezione Tabella Dati -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                <h2 class="font-semibold text-lg text-gray-700">Ulteriori registrazioni</h2>
-                <span id="record-count" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-medium">Caricamento...</span>
+        <!-- Riepilogo ticker -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <h2 class="font-semibold text-lg text-gray-700">Analisi ticker</h2>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="bg-gray-50 text-gray-400 text-xs uppercase tracking-wider">
-                            <th class="py-3 px-6 font-semibold">Data</th>
-                            <th class="py-3 px-6 font-semibold">Ticker</th>
-                            <th class="py-3 px-6 font-semibold text-right">Prezzo (€)</th>
+                            <th class="py-2 px-6 font-semibold">Ticker</th>
+                            <th class="py-2 px-6 font-semibold text-right">Ultimo prezzo</th>
+                            <th class="py-2 px-6 font-semibold text-right">Variazione %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ticker-summary-body" class="divide-y divide-gray-100 text-sm">
+                        <!-- I dati verranno inseriti qui da JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sezione Grafico -->
+        <div id="chart-section" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8 relative">
+            <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" data-range="1m" aria-pressed="false"
+                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                        1M
+                    </button>
+                    <button type="button" data-range="1y" aria-pressed="false"
+                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                        1Y
+                    </button>
+                    <button type="button" data-range="ytd" aria-pressed="false"
+                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                        YTD
+                    </button>
+                    <button type="button" data-range="all" aria-pressed="false"
+                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                        Tutto
+                    </button>
+                </div>
+                <button id="toggle-fullscreen" type="button" aria-pressed="false"
+                    class="ml-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                    Schermo intero
+                </button>
+            </div>
+            <div class="flex flex-wrap items-baseline gap-2 mb-3 text-xs" aria-live="polite">
+                <span class="text-gray-500">Variazione nel periodo:</span>
+                <div id="chart-variation" class="flex flex-wrap gap-x-4 gap-y-1"></div>
+            </div>
+            <div id="chart-canvas-container">
+                <canvas id="priceChart" width="400" height="150"></canvas>
+            </div>
+            <p id="fullscreen-status" class="sr-only" role="status" aria-live="polite"></p>
+        </div>
+
+        <!-- Sezione Dati storici -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
+                <h2 class="font-semibold text-lg text-gray-700">Dati storici</h2>
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <label class="sr-only" for="history-filter">Filtra dati storici</label>
+                    <input id="history-filter" type="search" placeholder="Filtra data, ticker o prezzo..."
+                        class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                    <span id="record-count" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-medium">Caricamento...</span>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-400 text-xs uppercase tracking-wider">
+                            <th class="py-2 px-6 font-semibold" aria-sort="descending">
+                                <button type="button" data-sort="date" class="hover:text-gray-600">Data</button>
+                            </th>
+                            <th class="py-2 px-6 font-semibold" aria-sort="none">
+                                <button type="button" data-sort="ticker" class="hover:text-gray-600">Ticker</button>
+                            </th>
+                            <th class="py-2 px-6 font-semibold text-right" aria-sort="none">
+                                <button type="button" data-sort="price" class="hover:text-gray-600">Prezzo (€)</button>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="table-body" class="divide-y divide-gray-100 text-sm">
@@ -62,6 +142,9 @@
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         let chartInstance = null; // Riferimento globale al grafico per gestire il reset
+        let updateVisibleVariations = () => {};
+        let historicalRecords = [];
+        let sortState = { key: 'date', direction: 'desc' };
 
         async function fetchData() {
             let allPrices = [];
@@ -102,28 +185,32 @@
         }
 
         function renderUI(data) {
-            const tbody = document.getElementById('table-body');
-            tbody.innerHTML = '';
-            document.getElementById('record-count').innerText = `${data.length} record totali`;
+            historicalRecords = data;
+            renderHistoricalTable();
+            renderTickerSummary(data);
 
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" class="py-4 px-6 text-center text-gray-400">Nessun dato presente nel database.</td></tr>`;
                 return;
             }
 
-            // Popola la tabella
-            data.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-gray-50 transition-colors';
-                tr.innerHTML = `
-                    <td class="py-4 px-6 font-medium text-gray-900">${row.date}</td>
-                    <td class="py-4 px-6 text-gray-500">${row.ticker}</td>
-                    <td class="py-4 px-6 text-right font-semibold text-blue-600">${Number(row.price).toFixed(2)} €</td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            const dates = [...new Set(data.map(row => row.date))].sort();
+            const recordedDates = [...new Set(data.map(row => row.date))].sort();
+            const firstDateParts = recordedDates[0].split('-').map(Number);
+            const lastDateParts = recordedDates[recordedDates.length - 1].split('-').map(Number);
+            const currentDate = new Date(Date.UTC(
+                firstDateParts[0],
+                firstDateParts[1] - 1,
+                firstDateParts[2]
+            ));
+            const lastDate = Date.UTC(
+                lastDateParts[0],
+                lastDateParts[1] - 1,
+                lastDateParts[2]
+            );
+            const dates = [];
+            while (currentDate.getTime() <= lastDate) {
+                dates.push(currentDate.toISOString().slice(0, 10));
+                currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+            }
             const tickers = [...new Set(data.map(row => row.ticker))].sort();
             const colors = [
                 '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c',
@@ -140,17 +227,163 @@
                 return {
                     label: ticker,
                     data: dates.map(date => pricesByTicker.get(ticker).get(date) ?? null),
+                    hidden: index !== 0,
+                    spanGaps: true,
                     borderColor: color,
                     backgroundColor: color,
                     borderWidth: 2,
                     fill: false,
                     tension: 0.1,
                     pointRadius: 0,
+                    pointHitRadius: 12,
                     pointHoverRadius: 5
                 };
             });
 
             renderChart(dates, datasets);
+        }
+
+        function renderHistoricalTable() {
+            const tbody = document.getElementById('table-body');
+            const filter = document.getElementById('history-filter').value.trim().toLocaleLowerCase('it');
+            const filteredRecords = historicalRecords.filter(row => {
+                const localizedPrice = Number(row.price).toLocaleString('it-IT', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+                const searchableText = `${row.date} ${row.ticker} ${row.price} ${localizedPrice}`.toLocaleLowerCase('it');
+                return searchableText.includes(filter);
+            });
+            const direction = sortState.direction === 'asc' ? 1 : -1;
+            filteredRecords.sort((rowA, rowB) => {
+                const valueA = rowA[sortState.key];
+                const valueB = rowB[sortState.key];
+                const comparison = sortState.key === 'price'
+                    ? Number(valueA) - Number(valueB)
+                    : String(valueA).localeCompare(String(valueB), 'it');
+                return comparison * direction;
+            });
+
+            tbody.replaceChildren();
+            document.getElementById('record-count').textContent = filter
+                ? `${filteredRecords.length} di ${historicalRecords.length} record`
+                : `${historicalRecords.length} record totali`;
+
+            if (filteredRecords.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 3;
+                cell.className = 'py-1 px-6 text-center text-gray-400';
+                cell.textContent = historicalRecords.length === 0
+                    ? 'Nessun dato presente nel database.'
+                    : 'Nessun record corrisponde al filtro.';
+                row.appendChild(cell);
+                tbody.appendChild(row);
+                return;
+            }
+
+            filteredRecords.forEach(record => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50 transition-colors';
+                const dateCell = document.createElement('td');
+                dateCell.className = 'py-1 px-6 font-medium text-gray-900';
+                dateCell.textContent = record.date;
+                const tickerCell = document.createElement('td');
+                tickerCell.className = 'py-1 px-6 text-gray-500';
+                tickerCell.textContent = record.ticker;
+                const priceCell = document.createElement('td');
+                priceCell.className = 'py-1 px-6 text-right font-semibold text-blue-600';
+                priceCell.textContent = `${Number(record.price).toFixed(2)} €`;
+                tr.append(dateCell, tickerCell, priceCell);
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('history-filter').addEventListener('input', renderHistoricalTable);
+        document.querySelectorAll('[data-sort]').forEach(button => {
+            button.addEventListener('click', () => {
+                const key = button.dataset.sort;
+                const direction = sortState.key === key && sortState.direction === 'asc' ? 'desc' : 'asc';
+                sortState = { key, direction };
+                document.querySelectorAll('[data-sort]').forEach(sortButton => {
+                    const header = sortButton.closest('th');
+                    header.setAttribute('aria-sort', sortButton.dataset.sort === key
+                        ? (direction === 'asc' ? 'ascending' : 'descending')
+                        : 'none');
+                });
+                renderHistoricalTable();
+            });
+        });
+
+        function renderTickerSummary(data) {
+            const tbody = document.getElementById('ticker-summary-body');
+            tbody.replaceChildren();
+
+            if (data.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 3;
+                cell.className = 'py-1 px-6 text-center text-gray-400';
+                cell.textContent = 'Nessun dato presente nel database.';
+                row.appendChild(cell);
+                tbody.appendChild(row);
+                return;
+            }
+
+            const recordsByTicker = new Map();
+            data.forEach(record => {
+                if (!recordsByTicker.has(record.ticker)) {
+                    recordsByTicker.set(record.ticker, []);
+                }
+                recordsByTicker.get(record.ticker).push(record);
+            });
+
+            [...recordsByTicker.entries()]
+                .sort(([tickerA], [tickerB]) => tickerA.localeCompare(tickerB))
+                .forEach(([ticker, records]) => {
+                    records.sort((recordA, recordB) => recordB.date.localeCompare(recordA.date));
+                    const latestPrice = Number(records[0].price);
+                    const previousPrice = records.length > 1 ? Number(records[1].price) : null;
+                    const hasVariation = previousPrice !== null
+                        && Number.isFinite(latestPrice)
+                        && Number.isFinite(previousPrice)
+                        && previousPrice !== 0;
+                    const variation = hasVariation
+                        ? ((latestPrice - previousPrice) / previousPrice) * 100
+                        : null;
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50 transition-colors';
+
+                    const tickerCell = document.createElement('td');
+                    tickerCell.className = 'py-1 px-6 font-medium text-gray-900';
+                    tickerCell.textContent = ticker;
+
+                    const priceCell = document.createElement('td');
+                    priceCell.className = 'py-1 px-6 text-right font-semibold text-blue-600';
+                    priceCell.textContent = Number.isFinite(latestPrice)
+                        ? `${latestPrice.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+                        : '—';
+
+                    const variationCell = document.createElement('td');
+                    variationCell.className = 'py-1 px-6 text-right font-semibold';
+                    if (variation === null || !Number.isFinite(variation)) {
+                        variationCell.classList.add('text-gray-400');
+                        variationCell.textContent = '—';
+                    } else {
+                        variationCell.classList.add(
+                            variation > 0 ? 'text-green-600' : variation < 0 ? 'text-red-600' : 'text-gray-500'
+                        );
+                        const sign = variation >= 0 ? '+' : '';
+                        variationCell.textContent = `${sign}${variation.toLocaleString('it-IT', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        })}%`;
+                    }
+
+                    row.append(tickerCell, priceCell, variationCell);
+                    tbody.appendChild(row);
+                });
         }
 
         function renderChart(labels, datasets) {
@@ -160,6 +393,190 @@
                 chartInstance.destroy();
             }
 
+            updateVisibleVariations = chart => {
+                const variationContainer = document.getElementById('chart-variation');
+                const firstIndex = Math.max(0, Math.ceil(chart.scales.x.min));
+                const lastIndex = Math.min(chart.data.labels.length - 1, Math.floor(chart.scales.x.max));
+                variationContainer.replaceChildren();
+
+                chart.data.datasets.forEach((dataset, datasetIndex) => {
+                    if (!chart.isDatasetVisible(datasetIndex)) {
+                        return;
+                    }
+
+                    let firstPrice = null;
+                    let lastPrice = null;
+                    let visiblePriceCount = 0;
+                    for (let index = firstIndex; index <= lastIndex; index++) {
+                        const price = dataset.data[index];
+                        if (Number.isFinite(price)) {
+                            visiblePriceCount++;
+                            if (firstPrice === null) {
+                                firstPrice = price;
+                            }
+                            lastPrice = price;
+                        }
+                    }
+
+                    const item = document.createElement('span');
+                    item.className = 'font-semibold';
+                    if (visiblePriceCount < 2 || firstPrice === null || lastPrice === null || firstPrice === 0) {
+                        item.classList.add('text-gray-400');
+                        item.textContent = `${dataset.label}: —`;
+                    } else {
+                        const variation = ((lastPrice - firstPrice) / firstPrice) * 100;
+                        item.classList.add(
+                            variation > 0 ? 'text-green-600' : variation < 0 ? 'text-red-600' : 'text-gray-500'
+                        );
+                        const sign = variation >= 0 ? '+' : '';
+                        item.textContent = `${dataset.label}: ${sign}${variation.toLocaleString('it-IT', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        })}%`;
+                    }
+                    variationContainer.appendChild(item);
+                });
+            };
+
+            const updateRangeButtons = activeRange => {
+                document.querySelectorAll('[data-range]').forEach(button => {
+                    const isActive = button.dataset.range === activeRange;
+                    button.setAttribute('aria-pressed', String(isActive));
+                    button.classList.toggle('bg-blue-100', isActive);
+                    button.classList.toggle('text-blue-700', isActive);
+                    button.classList.toggle('bg-gray-100', !isActive);
+                    button.classList.toggle('text-gray-600', !isActive);
+                });
+            };
+
+            let tickCacheKey = '';
+            let xAxisTickLabels = new Map();
+            const monthFormatter = new Intl.DateTimeFormat('it-IT', { month: 'short' });
+            const getXAxisTickLabels = scale => {
+                const cacheKey = `${scale.min}:${scale.max}:${scale.width}`;
+                if (cacheKey === tickCacheKey) {
+                    return xAxisTickLabels;
+                }
+
+                tickCacheKey = cacheKey;
+                xAxisTickLabels = new Map();
+                const firstVisibleIndex = Math.max(0, Math.ceil(scale.min));
+                const lastVisibleIndex = Math.min(labels.length - 1, Math.floor(scale.max));
+                if (firstVisibleIndex > lastVisibleIndex) {
+                    return xAxisTickLabels;
+                }
+
+                const visibleDays = scale.max - scale.min;
+                const startParts = labels[firstVisibleIndex].split('-').map(Number);
+                const endParts = labels[lastVisibleIndex].split('-').map(Number);
+                const visibleMonths = (endParts[0] - startParts[0]) * 12
+                    + endParts[1] - startParts[1] + 1;
+                const isWideView = visibleDays > 120;
+                const maxMonthLabels = Math.max(2, Math.floor(scale.width / 55));
+                const monthInterval = Math.ceil(visibleMonths / maxMonthLabels);
+                const monthCandidates = [];
+
+                for (let index = firstVisibleIndex; index <= lastVisibleIndex; index++) {
+                    const [year, month, day] = labels[index].split('-').map(Number);
+                    const previousDate = index > 0
+                        ? labels[index - 1].split('-').map(Number)
+                        : null;
+                    const isMonthStart = day === 1 || !previousDate
+                        || previousDate[0] !== year
+                        || previousDate[1] !== month;
+                    if (isMonthStart) {
+                        const monthIndex = (year - startParts[0]) * 12 + month - startParts[1];
+                        if (month === 1 || !isWideView || monthIndex % monthInterval === 0) {
+                            const text = month === 1
+                                ? String(year)
+                                : monthFormatter.format(new Date(year, month - 1, day));
+                            monthCandidates.push({
+                                index,
+                                text,
+                                priority: month === 1 ? 3 : 2,
+                                x: scale.getPixelForValue(index),
+                                width: text.length * 7 + 8
+                            });
+                        }
+                    }
+                }
+
+                const accepted = [];
+                monthCandidates.sort((a, b) => b.priority - a.priority || a.x - b.x)
+                    .forEach(candidate => {
+                        const hasCollision = accepted.some(label =>
+                            Math.abs(candidate.x - label.x) < (candidate.width + label.width) / 2 + 4
+                        );
+                        if (!hasCollision) {
+                            accepted.push(candidate);
+                            xAxisTickLabels.set(candidate.index, candidate.text);
+                        }
+                    });
+
+                if (!isWideView) {
+                    const dayCandidates = [];
+                    for (let index = firstVisibleIndex; index <= lastVisibleIndex; index++) {
+                        const [year, month, day] = labels[index].split('-').map(Number);
+                        const previousDate = index > 0
+                            ? labels[index - 1].split('-').map(Number)
+                            : null;
+                        const isMonthStart = day === 1 || !previousDate
+                            || previousDate[0] !== year
+                            || previousDate[1] !== month;
+                        if (!isMonthStart) {
+                            dayCandidates.push({
+                                index,
+                                text: String(day),
+                                x: scale.getPixelForValue(index),
+                                width: String(day).length * 7 + 8
+                            });
+                        }
+                    }
+
+                    const anchors = [
+                        { x: scale.left, width: 0, edge: true },
+                        ...accepted.sort((a, b) => a.x - b.x),
+                        { x: scale.right, width: 0, edge: true }
+                    ];
+                    const targetSpacing = 55;
+
+                    for (let anchorIndex = 0; anchorIndex < anchors.length - 1; anchorIndex++) {
+                        const leftAnchor = anchors[anchorIndex];
+                        const rightAnchor = anchors[anchorIndex + 1];
+                        const segmentStart = leftAnchor.edge
+                            ? leftAnchor.x + 10
+                            : leftAnchor.x + leftAnchor.width / 2 + 6;
+                        const segmentEnd = rightAnchor.edge
+                            ? rightAnchor.x - 10
+                            : rightAnchor.x - rightAnchor.width / 2 - 6;
+                        const segmentWidth = segmentEnd - segmentStart;
+                        const slotCount = Math.max(
+                            0,
+                            Math.round((rightAnchor.x - leftAnchor.x) / targetSpacing) - 1
+                        );
+
+                        for (let slot = 1; slot <= slotCount; slot++) {
+                            const targetX = segmentStart + segmentWidth * slot / (slotCount + 1);
+                            const nearbyCandidates = dayCandidates
+                                .filter(candidate => Math.abs(candidate.x - targetX) <= targetSpacing)
+                                .sort((a, b) => Math.abs(a.x - targetX) - Math.abs(b.x - targetX));
+                            const candidate = nearbyCandidates.find(day =>
+                                !accepted.some(label =>
+                                    Math.abs(day.x - label.x) < (day.width + label.width) / 2 + 4
+                                )
+                            );
+
+                            if (candidate) {
+                                accepted.push(candidate);
+                                xAxisTickLabels.set(candidate.index, candidate.text);
+                            }
+                        }
+                    }
+                }
+
+                return xAxisTickLabels;
+            };
+
             chartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -168,13 +585,36 @@
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
-                        legend: { display: true },
+                        legend: {
+                            display: true,
+                            labels: {
+                                usePointStyle: true,
+                                pointStyle: 'rect',
+                                boxWidth: 8,
+                                boxHeight: 8
+                            },
+                            onClick: (event, legendItem, legend) => {
+                                const chart = legend.chart;
+                                const datasetIndex = legendItem.datasetIndex;
+                                chart.setDatasetVisibility(
+                                    datasetIndex,
+                                    !chart.isDatasetVisible(datasetIndex)
+                                );
+                                chart.update();
+                                updateVisibleVariations(chart);
+                            }
+                        },
                         zoom: {
                             pan: {
                                 enabled: true,
                                 mode: 'x', // Permette lo spostamento sull'asse orizzontale
                                 modifierKey: null, // Permette il pan diretto con il tasto sinistro senza tenere premuto nessun tasto della tastiera
+                                onPan: ({ chart }) => {
+                                    updateVisibleVariations(chart);
+                                    updateRangeButtons(null);
+                                }
                             },
                             zoom: {
                                 wheel: {
@@ -183,22 +623,91 @@
                                 pinch: {
                                     enabled: true // Zoom con due dita su smartphone
                                 },
-                                mode: 'x' // Zoom solo sull'asse delle date (orizzontale)
+                                mode: 'x', // Zoom solo sull'asse delle date (orizzontale)
+                                onZoom: ({ chart }) => {
+                                    updateVisibleVariations(chart);
+                                    updateRangeButtons(null);
+                                }
                             }
                         }
                     },
                     scales: {
                         y: { grid: { color: '#f3f4f6' } },
-                        x: { grid: { display: false } }
+                        x: {
+                            grid: {
+                                display: false,
+                                drawTicks: false
+                            },
+                            ticks: {
+                                autoSkip: false,
+                                maxRotation: 0,
+                                minRotation: 0,
+                                callback: function(value) {
+                                    const index = Math.round(Number(value));
+                                    return getXAxisTickLabels(this).get(index) ?? '';
+                                }
+                            }
+                        }
                     }
                 }
             });
+            updateVisibleVariations(chartInstance);
+
+            document.querySelectorAll('[data-range]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const range = button.dataset.range;
+                    const lastIndex = labels.length - 1;
+                    let startIndex;
+
+                    if (range === '1m') {
+                        startIndex = Math.max(0, lastIndex - 29);
+                    } else if (range === '1y') {
+                        startIndex = Math.max(0, lastIndex - 364);
+                    } else if (range === 'ytd') {
+                        const lastDate = labels[lastIndex];
+                        const yearStart = `${lastDate.slice(0, 4)}-01-01`;
+                        const previousYearRecords = historicalRecords
+                            .filter(record => record.date < yearStart)
+                            .sort((recordA, recordB) => recordB.date.localeCompare(recordA.date));
+                        const ytdStartDate = previousYearRecords.length > 0
+                            ? previousYearRecords[0].date
+                            : yearStart;
+                        startIndex = Math.max(0, labels.indexOf(ytdStartDate));
+                    } else {
+                        startIndex = 0;
+                    }
+
+                    chartInstance.zoomScale('x', { min: startIndex, max: lastIndex });
+                    updateRangeButtons(range);
+                    updateVisibleVariations(chartInstance);
+                });
+            });
         }
 
-        // Event listener per il pulsante di Reset Zoom
-        document.getElementById('reset-zoom').addEventListener('click', () => {
+        const chartSection = document.getElementById('chart-section');
+        const fullscreenButton = document.getElementById('toggle-fullscreen');
+        const fullscreenStatus = document.getElementById('fullscreen-status');
+
+        fullscreenButton.addEventListener('click', async () => {
+            try {
+                if (document.fullscreenElement === chartSection) {
+                    await document.exitFullscreen();
+                } else {
+                    await chartSection.requestFullscreen();
+                }
+            } catch (error) {
+                console.error('Impossibile modificare la modalità a schermo intero:', error);
+                fullscreenStatus.textContent = 'Non è stato possibile modificare la modalità a schermo intero.';
+            }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            const isFullscreen = document.fullscreenElement === chartSection;
+            fullscreenButton.textContent = isFullscreen ? 'Esci da schermo intero' : 'Schermo intero';
+            fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
+            fullscreenStatus.textContent = '';
             if (chartInstance) {
-                chartInstance.resetZoom();
+                chartInstance.resize();
             }
         });
 
