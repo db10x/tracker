@@ -6,27 +6,29 @@ from pathlib import Path
 import yfinance as yf
 from dotenv import load_dotenv
 
-from tracker import load_tickers
+from tracker import load_instruments, upsert_instruments
 
 load_dotenv(Path(__file__).with_name(".env"))
 
 HISTORY_START_DATE = "2022-01-01"
 
 
-def get_ticker_history(ticker):
-    print(f"Recupero storico per {ticker}...")
-    history = yf.Ticker(ticker).history(
+def get_ticker_history(ticker, yahoo_ticker):
+    print(f"Recupero storico per {ticker} ({yahoo_ticker})...")
+    history = yf.Ticker(yahoo_ticker).history(
         start=HISTORY_START_DATE,
         auto_adjust=False,
     )
     if history.empty:
-        raise ValueError(f"Nessun dato storico trovato per {ticker}")
+        raise ValueError(f"Nessun dato storico trovato per {yahoo_ticker}")
     if "Close" not in history.columns:
-        raise ValueError(f"La colonna 'Close' manca nello storico di {ticker}")
+        raise ValueError(
+            f"La colonna 'Close' manca nello storico di {yahoo_ticker}"
+        )
 
     close_prices = history["Close"].dropna()
     if close_prices.empty:
-        raise ValueError(f"Nessun prezzo di chiusura valido per {ticker}")
+        raise ValueError(f"Nessun prezzo di chiusura valido per {yahoo_ticker}")
 
     rows = []
     for session_date, close_price in close_prices.items():
@@ -36,12 +38,15 @@ def get_ticker_history(ticker):
 
         price = float(close_price)
         if not math.isfinite(price):
-            raise ValueError(f"Prezzo non valido nello storico di {ticker}")
+            raise ValueError(
+                f"Prezzo non valido nello storico di {yahoo_ticker}"
+            )
         rows.append((date_str, ticker, price))
 
     if not rows:
         raise ValueError(
             f"Nessun prezzo di chiusura disponibile per {ticker} "
+            f"({yahoo_ticker}) "
             f"dal {HISTORY_START_DATE}"
         )
 
@@ -52,7 +57,7 @@ def get_ticker_history(ticker):
     return rows
 
 
-def save_history_to_db(rows, database_url, db_driver):
+def save_history_to_db(rows, instruments, database_url, db_driver):
     execute_values = importlib.import_module("psycopg2.extras").execute_values
     query = """
         INSERT INTO prices (date, ticker, price)
@@ -65,6 +70,7 @@ def save_history_to_db(rows, database_url, db_driver):
     try:
         with connection:
             with connection.cursor() as cursor:
+                upsert_instruments(cursor, instruments)
                 execute_values(cursor, query, rows, page_size=1000)
     finally:
         connection.close()
@@ -77,13 +83,13 @@ def main():
     if not database_url:
         raise ValueError("La variabile d'ambiente DATABASE_URL non è impostata.")
 
-    tickers = load_tickers()
+    instruments = load_instruments()
     rows = []
-    for ticker in tickers:
-        rows.extend(get_ticker_history(ticker))
+    for ticker, yahoo_ticker, _ in instruments:
+        rows.extend(get_ticker_history(ticker, yahoo_ticker))
 
     db_driver = importlib.import_module("psycopg2")
-    save_history_to_db(rows, database_url, db_driver)
+    save_history_to_db(rows, instruments, database_url, db_driver)
 
 
 if __name__ == "__main__":

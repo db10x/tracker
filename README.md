@@ -10,17 +10,39 @@ Scegli un nome per il progetto (es. etf-tracker), imposta una password sicura pe
 Una volta dentro la dashboard, vai sull'icona del database (SQL Editor nel menu a sinistra) e clicca su "New Query".
 Incolla questo codice SQL per creare la tabella che conterrà i tuoi dati e premi "Run":
 
-SQL
+```sql
+create table instruments (
+    ticker text primary key,
+    description text
+);
+
 create table prices (
     id serial primary key,
     date date not null,
-    ticker text not null,
+    ticker text not null references instruments (ticker),
     price numeric(10, 2) not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     unique (date, ticker)
 );
+```
 
-Lo script legge tutti i valori della colonna `Ticker_yf` da `Anagrafica.csv` e registra un prezzo per ogni ticker. Mantieni il file nella stessa cartella di `tracker.py` e includilo nel repository, così sarà disponibile anche nell'esecuzione GitHub Actions. 
+La tabella `instruments` contiene il ticker canonico e la descrizione; `prices.ticker` lo usa come chiave esterna. Gli script mantengono `Anagrafica.csv` come fonte dell'anagrafica: usano `Ticker_yf` per interrogare Yahoo Finance e salvano `Ticker` in `prices`. `backfill_history.py` inizializza/aggiorna `instruments` insieme allo storico; il job giornaliero sincronizza le descrizioni prima di salvare i prezzi. Mantieni il CSV nella stessa cartella degli script e includilo nel repository, così sarà disponibile anche in GitHub Actions.
+
+La pagina web visualizza i dati con la chiave pubblica Supabase: abilita RLS e consenti al ruolo `anon` solo la lettura delle due tabelle. Per un database nuovo, puoi applicare anche queste policy:
+
+```sql
+alter table public.instruments enable row level security;
+alter table public.prices enable row level security;
+
+grant select on public.instruments, public.prices to anon;
+
+create policy "Allow anonymous read access to instruments"
+    on public.instruments for select to anon using (true);
+create policy "Allow anonymous read access to prices"
+    on public.prices for select to anon using (true);
+```
+
+Non concedere permessi di scrittura al ruolo `anon`: le modifiche all'anagrafica vengono effettuate dagli script usando `DATABASE_URL`.
 
 Ora recuperiamo le credenziali: premi il tasto Connect nel menu in alto. Nella finestra che si apre a destra seleziona Direct Connection string e come connection method Connection pooler e Type URI. Copia la connection string (sarà simile a postgresql://postgres.wbwwjwfhgvrwtoaitleh:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:6543/postgres). Conserva questa stringa, ti servirà tra poco.
 
@@ -97,6 +119,6 @@ Per popolare la tabella `prices` con lo storico disponibile su Yahoo Finance per
 python backfill_history.py
 ```
 
-Lo script scarica le quotazioni di chiusura dal 1° gennaio 2022 in poi, usa la data effettiva della seduta e aggiorna eventuali record con la stessa coppia data/ticker. Non scarica né inserisce date precedenti; eventuali record precedenti già presenti nel database non vengono cancellati. Prima di scrivere nel database verifica che tutti i ticker abbiano dati; poi salva l'intero caricamento in un'unica transazione. Può quindi essere rilanciato senza creare righe duplicate. Richiede le stesse dipendenze e la stessa variabile `DATABASE_URL` dello script giornaliero.
+Lo script scarica le quotazioni di chiusura da Yahoo Finance dal 1° gennaio 2022 in poi usando `Ticker_yf`, salva `Ticker` come identificativo e sincronizza ticker e descrizioni del CSV in `instruments`. Usa la data effettiva della seduta e aggiorna eventuali record con la stessa coppia data/ticker. Prima di scrivere nel database verifica che tutti i ticker abbiano dati; poi salva anagrafica e storico in un'unica transazione. Può quindi essere rilanciato senza creare righe duplicate. Richiede le stesse dipendenze e la stessa variabile `DATABASE_URL` dello script giornaliero.
 
 Per verificare che la variabile sia caricata puoi eseguire `$env:DATABASE_URL` in PowerShell; il valore salvato nel file locale viene letto all'avvio degli script.

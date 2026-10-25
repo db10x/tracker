@@ -14,7 +14,106 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
     <!-- Libreria ufficiale Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        try {
+            document.documentElement.dataset.theme = localStorage.getItem('tracker-theme') === 'dark'
+                ? 'dark'
+                : 'light';
+        } catch (error) {
+            console.error('Impossibile leggere il tema salvato:', error);
+            document.documentElement.dataset.theme = 'light';
+        }
+    </script>
     <style>
+        :root {
+            color-scheme: light;
+        }
+
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+        }
+
+        :root[data-theme="dark"] body {
+            background-color: #111827;
+            color: #f3f4f6;
+        }
+
+        :root[data-theme="dark"] .bg-white {
+            background-color: #1f2937;
+        }
+
+        :root[data-theme="dark"] .bg-gray-50 {
+            background-color: #111827;
+        }
+
+        :root[data-theme="dark"] .bg-gray-100 {
+            background-color: #374151;
+        }
+
+        :root[data-theme="dark"] .hover\:bg-gray-200:hover {
+            background-color: #4b5563;
+        }
+
+        :root[data-theme="dark"] .hover\:bg-gray-50:hover {
+            background-color: #374151;
+        }
+
+        :root[data-theme="dark"] .text-gray-900 {
+            color: #f9fafb;
+        }
+
+        :root[data-theme="dark"] .text-gray-800 {
+            color: #f3f4f6;
+        }
+
+        :root[data-theme="dark"] .text-gray-700 {
+            color: #e5e7eb;
+        }
+
+        :root[data-theme="dark"] .text-gray-600,
+        :root[data-theme="dark"] .hover\:text-gray-600:hover {
+            color: #d1d5db;
+        }
+
+        :root[data-theme="dark"] .text-gray-500,
+        :root[data-theme="dark"] .text-gray-400 {
+            color: #9ca3af;
+        }
+
+        :root[data-theme="dark"] .text-green-600 {
+            color: #4ade80;
+        }
+
+        :root[data-theme="dark"] .text-red-600 {
+            color: #f87171;
+        }
+
+        :root[data-theme="dark"] .text-blue-600 {
+            color: #60a5fa;
+        }
+
+        :root[data-theme="dark"] .text-blue-700 {
+            color: #bfdbfe;
+        }
+
+        :root[data-theme="dark"] .bg-blue-100 {
+            background-color: #1e3a8a;
+        }
+
+        :root[data-theme="dark"] .border-gray-100,
+        :root[data-theme="dark"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+            border-color: #374151;
+        }
+
+        :root[data-theme="dark"] .border-gray-200 {
+            border-color: #4b5563;
+        }
+
+        .theme-toggle:focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
+
         #chart-canvas-container {
             height: 390px;
             position: relative;
@@ -40,22 +139,33 @@
 
     <div class="max-w-4xl mx-auto p-6">
         <header class="mb-8 text-center">
+            <div class="flex justify-end mb-2">
+                <button id="toggle-theme" type="button" aria-pressed="false"
+                    class="theme-toggle text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                    Tema scuro
+                </button>
+            </div>
             <h1 class="text-3xl font-bold text-blue-600">Tracker titoli</h1>
             <p class="text-gray-500 mt-2">Storico dei prezzi di chiusura dei titoli monitorati</p>
         </header>
 
-        <!-- Riepilogo ticker -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
-            <div class="px-6 py-4 border-b border-gray-100">
-                <h2 class="font-semibold text-lg text-gray-700">Analisi ticker</h2>
-            </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="bg-gray-50 text-gray-400 text-xs uppercase tracking-wider">
-                            <th class="py-2 px-6 font-semibold">Ticker</th>
-                            <th class="py-2 px-6 font-semibold text-right">Ultimo prezzo</th>
-                            <th class="py-2 px-6 font-semibold text-right">Variazione %</th>
+                            <th class="py-2 px-6 font-semibold" aria-sort="ascending">
+                                <button type="button" data-summary-sort="ticker" class="hover:text-gray-600">Ticker</button>
+                            </th>
+                            <th class="py-2 px-6 font-semibold" aria-sort="none">
+                                <button type="button" data-summary-sort="description" class="hover:text-gray-600">Descrizione</button>
+                            </th>
+                            <th class="py-2 px-6 font-semibold text-right" aria-sort="none">
+                                <button type="button" data-summary-sort="price" class="hover:text-gray-600">Ultimo prezzo</button>
+                            </th>
+                            <th class="py-2 px-6 font-semibold text-right" aria-sort="none">
+                                <button type="button" data-summary-sort="variation" class="hover:text-gray-600">Variazione %</button>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="ticker-summary-body" class="divide-y divide-gray-100 text-sm">
@@ -63,6 +173,7 @@
                     </tbody>
                 </table>
             </div>
+            <p id="load-status" class="hidden px-6 py-3 text-sm text-red-600" role="status" aria-live="polite"></p>
         </div>
 
         <!-- Sezione Grafico -->
@@ -86,10 +197,16 @@
                         Tutto
                     </button>
                 </div>
-                <button id="toggle-fullscreen" type="button" aria-pressed="false"
-                    class="ml-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                    Schermo intero
-                </button>
+                <div class="flex items-center gap-2">
+                    <button id="toggle-chart-mode" type="button" aria-pressed="false"
+                        class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                        Percentuale
+                    </button>
+                    <button id="toggle-fullscreen" type="button" aria-pressed="false"
+                        class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                        Schermo intero
+                    </button>
+                </div>
             </div>
             <div class="flex flex-wrap items-baseline gap-2 mb-3 text-xs" aria-live="polite">
                 <span class="text-gray-500">Variazione nel periodo:</span>
@@ -101,38 +218,6 @@
             <p id="fullscreen-status" class="sr-only" role="status" aria-live="polite"></p>
         </div>
 
-        <!-- Sezione Dati storici -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
-                <h2 class="font-semibold text-lg text-gray-700">Dati storici</h2>
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <label class="sr-only" for="history-filter">Filtra dati storici</label>
-                    <input id="history-filter" type="search" placeholder="Filtra data, ticker o prezzo..."
-                        class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200">
-                    <span id="record-count" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-medium">Caricamento...</span>
-                </div>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-gray-50 text-gray-400 text-xs uppercase tracking-wider">
-                            <th class="py-2 px-6 font-semibold" aria-sort="descending">
-                                <button type="button" data-sort="date" class="hover:text-gray-600">Data</button>
-                            </th>
-                            <th class="py-2 px-6 font-semibold" aria-sort="none">
-                                <button type="button" data-sort="ticker" class="hover:text-gray-600">Ticker</button>
-                            </th>
-                            <th class="py-2 px-6 font-semibold text-right" aria-sort="none">
-                                <button type="button" data-sort="price" class="hover:text-gray-600">Prezzo (€)</button>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody id="table-body" class="divide-y divide-gray-100 text-sm">
-                        <!-- I dati verranno inseriti qui da JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
     </div>
 
     <script>
@@ -143,8 +228,60 @@
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         let chartInstance = null; // Riferimento globale al grafico per gestire il reset
         let updateVisibleVariations = () => {};
-        let historicalRecords = [];
-        let sortState = { key: 'date', direction: 'desc' };
+        let percentageMode = false;
+        let priceRecords = [];
+        let summarySortState = { key: 'ticker', direction: 'asc' };
+
+        function isDarkTheme() {
+            return document.documentElement.dataset.theme === 'dark';
+        }
+
+        function getSeriesColor(index) {
+            const hue = (index * 137.508) % 360;
+            const lightness = isDarkTheme() ? 65 : 45;
+            return `hsl(${hue.toFixed(1)}, 78%, ${lightness}%)`;
+        }
+
+        function updateThemeButton() {
+            const darkTheme = isDarkTheme();
+            const themeButton = document.getElementById('toggle-theme');
+            themeButton.textContent = darkTheme ? 'Tema chiaro' : 'Tema scuro';
+            themeButton.setAttribute('aria-label', `Attiva tema ${darkTheme ? 'chiaro' : 'scuro'}`);
+            themeButton.setAttribute('aria-pressed', String(darkTheme));
+        }
+
+        function updateChartTheme() {
+            if (!chartInstance) {
+                return;
+            }
+
+            const darkTheme = isDarkTheme();
+            const textColor = darkTheme ? '#d1d5db' : '#666';
+            chartInstance.options.plugins.legend.labels.color = textColor;
+            chartInstance.options.scales.x.ticks.color = textColor;
+            chartInstance.options.scales.y.ticks.color = textColor;
+            chartInstance.options.scales.y.grid.color = darkTheme ? '#374151' : '#f3f4f6';
+            chartInstance.data.datasets.forEach((dataset, index) => {
+                const color = getSeriesColor(index);
+                dataset.borderColor = color;
+                dataset.backgroundColor = color;
+            });
+            chartInstance.update('none');
+        }
+
+        const themeButton = document.getElementById('toggle-theme');
+        updateThemeButton();
+        themeButton.addEventListener('click', () => {
+            const theme = isDarkTheme() ? 'light' : 'dark';
+            document.documentElement.dataset.theme = theme;
+            updateThemeButton();
+            updateChartTheme();
+            try {
+                localStorage.setItem('tracker-theme', theme);
+            } catch (error) {
+                console.error('Impossibile salvare il tema selezionato:', error);
+            }
+        });
 
         async function fetchData() {
             let allPrices = [];
@@ -165,7 +302,7 @@
 
                 if (error) {
                     console.error('Errore nel recupero dati:', error);
-                    document.getElementById('record-count').innerText = 'Errore di caricamento';
+                    showLoadError('Errore nel caricamento dei prezzi.');
                     return;
                 }
 
@@ -181,12 +318,35 @@
                 }
             }
 
+            const { data: instruments, error: instrumentsError } = await supabaseClient
+                .from('instruments')
+                .select('ticker, description');
+
+            if (instrumentsError) {
+                console.error('Errore nel recupero delle descrizioni:', instrumentsError);
+                showLoadError('Errore nel caricamento delle descrizioni.');
+                return;
+            }
+
+            const descriptionsByTicker = new Map(
+                instruments.map(instrument => [instrument.ticker, instrument.description || ''])
+            );
+            allPrices = allPrices.map(record => ({
+                ...record,
+                description: descriptionsByTicker.get(record.ticker) || ''
+            }));
+
             renderUI(allPrices);
         }
 
+        function showLoadError(message) {
+            const status = document.getElementById('load-status');
+            status.textContent = message;
+            status.classList.remove('hidden');
+        }
+
         function renderUI(data) {
-            historicalRecords = data;
-            renderHistoricalTable();
+            priceRecords = data;
             renderTickerSummary(data);
 
             if (data.length === 0) {
@@ -212,10 +372,6 @@
                 currentDate.setUTCDate(currentDate.getUTCDate() + 1);
             }
             const tickers = [...new Set(data.map(row => row.ticker))].sort();
-            const colors = [
-                '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c',
-                '#0891b2', '#c026d3', '#4d7c0f', '#ca8a04', '#475569'
-            ];
             const pricesByTicker = new Map(
                 tickers.map(ticker => [ticker, new Map()])
             );
@@ -223,10 +379,12 @@
                 pricesByTicker.get(row.ticker).set(row.date, Number(row.price));
             });
             const datasets = tickers.map((ticker, index) => {
-                const color = colors[index % colors.length];
+                const color = getSeriesColor(index);
+                const values = dates.map(date => pricesByTicker.get(ticker).get(date) ?? null);
                 return {
                     label: ticker,
-                    data: dates.map(date => pricesByTicker.get(ticker).get(date) ?? null),
+                    data: values,
+                    rawData: values,
                     hidden: index !== 0,
                     spanGaps: true,
                     borderColor: color,
@@ -243,86 +401,15 @@
             renderChart(dates, datasets);
         }
 
-        function renderHistoricalTable() {
-            const tbody = document.getElementById('table-body');
-            const filter = document.getElementById('history-filter').value.trim().toLocaleLowerCase('it');
-            const filteredRecords = historicalRecords.filter(row => {
-                const localizedPrice = Number(row.price).toLocaleString('it-IT', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                });
-                const searchableText = `${row.date} ${row.ticker} ${row.price} ${localizedPrice}`.toLocaleLowerCase('it');
-                return searchableText.includes(filter);
-            });
-            const direction = sortState.direction === 'asc' ? 1 : -1;
-            filteredRecords.sort((rowA, rowB) => {
-                const valueA = rowA[sortState.key];
-                const valueB = rowB[sortState.key];
-                const comparison = sortState.key === 'price'
-                    ? Number(valueA) - Number(valueB)
-                    : String(valueA).localeCompare(String(valueB), 'it');
-                return comparison * direction;
-            });
-
-            tbody.replaceChildren();
-            document.getElementById('record-count').textContent = filter
-                ? `${filteredRecords.length} di ${historicalRecords.length} record`
-                : `${historicalRecords.length} record totali`;
-
-            if (filteredRecords.length === 0) {
-                const row = document.createElement('tr');
-                const cell = document.createElement('td');
-                cell.colSpan = 3;
-                cell.className = 'py-1 px-6 text-center text-gray-400';
-                cell.textContent = historicalRecords.length === 0
-                    ? 'Nessun dato presente nel database.'
-                    : 'Nessun record corrisponde al filtro.';
-                row.appendChild(cell);
-                tbody.appendChild(row);
-                return;
-            }
-
-            filteredRecords.forEach(record => {
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-gray-50 transition-colors';
-                const dateCell = document.createElement('td');
-                dateCell.className = 'py-1 px-6 font-medium text-gray-900';
-                dateCell.textContent = record.date;
-                const tickerCell = document.createElement('td');
-                tickerCell.className = 'py-1 px-6 text-gray-500';
-                tickerCell.textContent = record.ticker;
-                const priceCell = document.createElement('td');
-                priceCell.className = 'py-1 px-6 text-right font-semibold text-blue-600';
-                priceCell.textContent = `${Number(record.price).toFixed(2)} €`;
-                tr.append(dateCell, tickerCell, priceCell);
-                tbody.appendChild(tr);
-            });
-        }
-
-        document.getElementById('history-filter').addEventListener('input', renderHistoricalTable);
-        document.querySelectorAll('[data-sort]').forEach(button => {
-            button.addEventListener('click', () => {
-                const key = button.dataset.sort;
-                const direction = sortState.key === key && sortState.direction === 'asc' ? 'desc' : 'asc';
-                sortState = { key, direction };
-                document.querySelectorAll('[data-sort]').forEach(sortButton => {
-                    const header = sortButton.closest('th');
-                    header.setAttribute('aria-sort', sortButton.dataset.sort === key
-                        ? (direction === 'asc' ? 'ascending' : 'descending')
-                        : 'none');
-                });
-                renderHistoricalTable();
-            });
-        });
-
         function renderTickerSummary(data) {
             const tbody = document.getElementById('ticker-summary-body');
             tbody.replaceChildren();
+            document.getElementById('load-status').classList.add('hidden');
 
             if (data.length === 0) {
                 const row = document.createElement('tr');
                 const cell = document.createElement('td');
-                cell.colSpan = 3;
+                cell.colSpan = 4;
                 cell.className = 'py-1 px-6 text-center text-gray-400';
                 cell.textContent = 'Nessun dato presente nel database.';
                 row.appendChild(cell);
@@ -338,60 +425,172 @@
                 recordsByTicker.get(record.ticker).push(record);
             });
 
-            [...recordsByTicker.entries()]
-                .sort(([tickerA], [tickerB]) => tickerA.localeCompare(tickerB))
-                .forEach(([ticker, records]) => {
-                    records.sort((recordA, recordB) => recordB.date.localeCompare(recordA.date));
-                    const latestPrice = Number(records[0].price);
-                    const previousPrice = records.length > 1 ? Number(records[1].price) : null;
-                    const hasVariation = previousPrice !== null
-                        && Number.isFinite(latestPrice)
-                        && Number.isFinite(previousPrice)
-                        && previousPrice !== 0;
-                    const variation = hasVariation
-                        ? ((latestPrice - previousPrice) / previousPrice) * 100
-                        : null;
+            const summaries = [...recordsByTicker.entries()].map(([ticker, records]) => {
+                records.sort((recordA, recordB) => recordB.date.localeCompare(recordA.date));
+                const latestPrice = Number(records[0].price);
+                const previousPrice = records.length > 1 ? Number(records[1].price) : null;
+                const hasVariation = previousPrice !== null
+                    && Number.isFinite(latestPrice)
+                    && Number.isFinite(previousPrice)
+                    && previousPrice !== 0;
+                const variation = hasVariation
+                    ? ((latestPrice - previousPrice) / previousPrice) * 100
+                    : null;
+                return {
+                    ticker,
+                    description: records[0].description || '',
+                    price: latestPrice,
+                    variation
+                };
+            });
+            const direction = summarySortState.direction === 'asc' ? 1 : -1;
+            summaries.sort((summaryA, summaryB) => {
+                const valueA = summaryA[summarySortState.key];
+                const valueB = summaryB[summarySortState.key];
+                let comparison;
+                if (summarySortState.key === 'price' || summarySortState.key === 'variation') {
+                    const finiteA = Number.isFinite(valueA);
+                    const finiteB = Number.isFinite(valueB);
+                    comparison = finiteA && finiteB
+                        ? valueA - valueB
+                        : finiteA ? -1 : finiteB ? 1 : 0;
+                } else {
+                    comparison = String(valueA).localeCompare(String(valueB), 'it');
+                }
+                return comparison * direction;
+            });
 
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-gray-50 transition-colors';
+            summaries.forEach(({ ticker, description, price, variation }) => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 transition-colors';
 
-                    const tickerCell = document.createElement('td');
-                    tickerCell.className = 'py-1 px-6 font-medium text-gray-900';
-                    tickerCell.textContent = ticker;
+                const tickerCell = document.createElement('td');
+                tickerCell.className = 'py-1 px-6 font-medium text-gray-900';
+                tickerCell.textContent = ticker;
 
-                    const priceCell = document.createElement('td');
-                    priceCell.className = 'py-1 px-6 text-right font-semibold text-blue-600';
-                    priceCell.textContent = Number.isFinite(latestPrice)
-                        ? `${latestPrice.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-                        : '—';
+                const descriptionCell = document.createElement('td');
+                descriptionCell.className = 'py-1 px-6 text-gray-500';
+                descriptionCell.textContent = description;
 
-                    const variationCell = document.createElement('td');
-                    variationCell.className = 'py-1 px-6 text-right font-semibold';
-                    if (variation === null || !Number.isFinite(variation)) {
-                        variationCell.classList.add('text-gray-400');
-                        variationCell.textContent = '—';
-                    } else {
-                        variationCell.classList.add(
-                            variation > 0 ? 'text-green-600' : variation < 0 ? 'text-red-600' : 'text-gray-500'
-                        );
-                        const sign = variation >= 0 ? '+' : '';
-                        variationCell.textContent = `${sign}${variation.toLocaleString('it-IT', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                        })}%`;
-                    }
+                const priceCell = document.createElement('td');
+                priceCell.className = 'py-1 px-6 text-right font-semibold text-blue-600';
+                priceCell.textContent = Number.isFinite(price)
+                    ? `${price.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+                    : '—';
 
-                    row.append(tickerCell, priceCell, variationCell);
-                    tbody.appendChild(row);
-                });
+                const variationCell = document.createElement('td');
+                variationCell.className = 'py-1 px-6 text-right font-semibold';
+                if (variation === null || !Number.isFinite(variation)) {
+                    variationCell.classList.add('text-gray-400');
+                    variationCell.textContent = '—';
+                } else {
+                    variationCell.classList.add(
+                        variation > 0 ? 'text-green-600' : variation < 0 ? 'text-red-600' : 'text-gray-500'
+                    );
+                    const sign = variation >= 0 ? '+' : '';
+                    variationCell.textContent = `${sign}${variation.toLocaleString('it-IT', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    })}%`;
+                }
+
+                row.append(tickerCell, descriptionCell, priceCell, variationCell);
+                tbody.appendChild(row);
+            });
         }
+
+        document.querySelectorAll('[data-summary-sort]').forEach(button => {
+            button.addEventListener('click', () => {
+                const key = button.dataset.summarySort;
+                const direction = summarySortState.key === key
+                    && summarySortState.direction === 'asc'
+                    ? 'desc'
+                    : 'asc';
+                summarySortState = { key, direction };
+                document.querySelectorAll('[data-summary-sort]').forEach(sortButton => {
+                    const header = sortButton.closest('th');
+                    header.setAttribute('aria-sort', sortButton.dataset.summarySort === key
+                        ? (direction === 'asc' ? 'ascending' : 'descending')
+                        : 'none');
+                });
+                renderTickerSummary(priceRecords);
+            });
+        });
 
         function renderChart(labels, datasets) {
             const ctx = document.getElementById('priceChart').getContext('2d');
+            const chartModeButton = document.getElementById('toggle-chart-mode');
+            const getVisibleDataRange = (chartDatasets, isVisible = dataset => !dataset.hidden) => {
+                let firstIndex = Infinity;
+                let lastIndex = -Infinity;
+
+                chartDatasets.forEach((dataset, datasetIndex) => {
+                    if (!isVisible(dataset, datasetIndex)) {
+                        return;
+                    }
+                    dataset.data.forEach((price, index) => {
+                        if (Number.isFinite(price)) {
+                            firstIndex = Math.min(firstIndex, index);
+                            lastIndex = Math.max(lastIndex, index);
+                        }
+                    });
+                });
+
+                return firstIndex === Infinity ? null : { min: firstIndex, max: lastIndex };
+            };
             
             if (chartInstance) {
                 chartInstance.destroy();
             }
+
+            const getInterpolatedValue = (values, position) => {
+                let previousIndex = -1;
+                let nextIndex = -1;
+                for (let index = Math.min(Math.floor(position), values.length - 1); index >= 0; index--) {
+                    if (Number.isFinite(values[index])) {
+                        previousIndex = index;
+                        break;
+                    }
+                }
+                for (let index = Math.max(0, Math.ceil(position)); index < values.length; index++) {
+                    if (Number.isFinite(values[index])) {
+                        nextIndex = index;
+                        break;
+                    }
+                }
+
+                if (previousIndex >= 0 && previousIndex === nextIndex) {
+                    return values[previousIndex];
+                }
+                if (previousIndex >= 0 && nextIndex >= 0) {
+                    const progress = (position - previousIndex) / (nextIndex - previousIndex);
+                    return values[previousIndex]
+                        + (values[nextIndex] - values[previousIndex]) * progress;
+                }
+                if (nextIndex >= 0) {
+                    return values[nextIndex];
+                }
+                return previousIndex >= 0 ? values[previousIndex] : null;
+            };
+
+            const updatePercentageDatasets = chart => {
+                if (!percentageMode) {
+                    chart.data.datasets.forEach(dataset => {
+                        dataset.data = dataset.rawData;
+                    });
+                    return;
+                }
+
+                const visibleStart = Math.max(0, chart.scales.x.min);
+                chart.data.datasets.forEach(dataset => {
+                    const baseline = getInterpolatedValue(dataset.rawData, visibleStart);
+                    dataset.data = dataset.rawData.map(value =>
+                        Number.isFinite(value) && baseline !== null && baseline !== 0
+                            ? ((value - baseline) / baseline) * 100
+                            : null
+                    );
+                });
+            };
 
             updateVisibleVariations = chart => {
                 const variationContainer = document.getElementById('chart-variation');
@@ -420,11 +619,14 @@
 
                     const item = document.createElement('span');
                     item.className = 'font-semibold';
-                    if (visiblePriceCount < 2 || firstPrice === null || lastPrice === null || firstPrice === 0) {
+                    if (visiblePriceCount < 2 || firstPrice === null || lastPrice === null
+                        || (!percentageMode && firstPrice === 0)) {
                         item.classList.add('text-gray-400');
                         item.textContent = `${dataset.label}: —`;
                     } else {
-                        const variation = ((lastPrice - firstPrice) / firstPrice) * 100;
+                        const variation = percentageMode
+                            ? getInterpolatedValue(dataset.data, chart.scales.x.max) ?? lastPrice
+                            : ((lastPrice - firstPrice) / firstPrice) * 100;
                         item.classList.add(
                             variation > 0 ? 'text-green-600' : variation < 0 ? 'text-red-600' : 'text-gray-500'
                         );
@@ -590,6 +792,7 @@
                         legend: {
                             display: true,
                             labels: {
+                                color: isDarkTheme() ? '#d1d5db' : '#666',
                                 usePointStyle: true,
                                 pointStyle: 'rect',
                                 boxWidth: 8,
@@ -602,8 +805,34 @@
                                     datasetIndex,
                                     !chart.isDatasetVisible(datasetIndex)
                                 );
-                                chart.update();
-                                updateVisibleVariations(chart);
+                                chart.update('none');
+                                const isAllRangeSelected = document
+                                    .querySelector('[data-range="all"]')
+                                    .getAttribute('aria-pressed') === 'true';
+                                if (isAllRangeSelected) {
+                                    const visibleRange = getVisibleDataRange(
+                                        chart.data.datasets,
+                                        (_, index) => chart.isDatasetVisible(index)
+                                    );
+                                    if (visibleRange) {
+                                        chart.zoomScale('x', visibleRange);
+                                        updateRangeButtons('all');
+                                    }
+                                    updateVisibleVariations(chart);
+                                } else {
+                                    updateVisibleVariations(chart);
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: context => {
+                                    const value = context.parsed.y.toLocaleString('it-IT', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    });
+                                    return `${context.dataset.label}: ${value}${percentageMode ? '%' : ' €'}`;
+                                }
                             }
                         },
                         zoom: {
@@ -612,6 +841,8 @@
                                 mode: 'x', // Permette lo spostamento sull'asse orizzontale
                                 modifierKey: null, // Permette il pan diretto con il tasto sinistro senza tenere premuto nessun tasto della tastiera
                                 onPan: ({ chart }) => {
+                                    updatePercentageDatasets(chart);
+                                    chart.update('none');
                                     updateVisibleVariations(chart);
                                     updateRangeButtons(null);
                                 }
@@ -625,6 +856,8 @@
                                 },
                                 mode: 'x', // Zoom solo sull'asse delle date (orizzontale)
                                 onZoom: ({ chart }) => {
+                                    updatePercentageDatasets(chart);
+                                    chart.update('none');
                                     updateVisibleVariations(chart);
                                     updateRangeButtons(null);
                                 }
@@ -632,13 +865,25 @@
                         }
                     },
                     scales: {
-                        y: { grid: { color: '#f3f4f6' } },
+                        y: {
+                            grid: { color: isDarkTheme() ? '#374151' : '#f3f4f6' },
+                            ticks: {
+                                color: isDarkTheme() ? '#d1d5db' : '#666',
+                                callback: percentageMode
+                                    ? value => `${Number(value).toLocaleString('it-IT', {
+                                        maximumFractionDigits: 2
+                                    })}%`
+                                    : undefined
+                            }
+                        },
                         x: {
+                            ...getVisibleDataRange(datasets),
                             grid: {
                                 display: false,
                                 drawTicks: false
                             },
                             ticks: {
+                                color: isDarkTheme() ? '#d1d5db' : '#666',
                                 autoSkip: false,
                                 maxRotation: 0,
                                 minRotation: 0,
@@ -651,7 +896,30 @@
                     }
                 }
             });
+            chartInstance.data.datasets.forEach(dataset => {
+                dataset.tension = percentageMode ? 0 : 0.1;
+            });
+            updateRangeButtons('all');
+            chartModeButton.textContent = percentageMode ? 'Valori assoluti' : 'Percentuale';
+            chartModeButton.setAttribute('aria-pressed', String(percentageMode));
             updateVisibleVariations(chartInstance);
+
+            chartModeButton.onclick = () => {
+                percentageMode = !percentageMode;
+                chartInstance.data.datasets.forEach(dataset => {
+                    dataset.tension = percentageMode ? 0 : 0.1;
+                });
+                updatePercentageDatasets(chartInstance);
+                chartInstance.options.scales.y.ticks.callback = percentageMode
+                    ? value => `${Number(value).toLocaleString('it-IT', {
+                        maximumFractionDigits: 2
+                    })}%`
+                    : undefined;
+                chartModeButton.textContent = percentageMode ? 'Valori assoluti' : 'Percentuale';
+                chartModeButton.setAttribute('aria-pressed', String(percentageMode));
+                chartInstance.update('none');
+                updateVisibleVariations(chartInstance);
+            };
 
             document.querySelectorAll('[data-range]').forEach(button => {
                 button.addEventListener('click', () => {
@@ -666,7 +934,7 @@
                     } else if (range === 'ytd') {
                         const lastDate = labels[lastIndex];
                         const yearStart = `${lastDate.slice(0, 4)}-01-01`;
-                        const previousYearRecords = historicalRecords
+                        const previousYearRecords = priceRecords
                             .filter(record => record.date < yearStart)
                             .sort((recordA, recordB) => recordB.date.localeCompare(recordA.date));
                         const ytdStartDate = previousYearRecords.length > 0
@@ -674,10 +942,25 @@
                             : yearStart;
                         startIndex = Math.max(0, labels.indexOf(ytdStartDate));
                     } else {
-                        startIndex = 0;
+                        const visibleRange = getVisibleDataRange(
+                            chartInstance.data.datasets,
+                            (_, datasetIndex) => chartInstance.isDatasetVisible(datasetIndex)
+                        );
+                        if (!visibleRange) {
+                            return;
+                        }
+                        startIndex = visibleRange.min;
+                        chartInstance.zoomScale('x', visibleRange);
+                        updatePercentageDatasets(chartInstance);
+                        chartInstance.update('none');
+                        updateRangeButtons(range);
+                        updateVisibleVariations(chartInstance);
+                        return;
                     }
 
                     chartInstance.zoomScale('x', { min: startIndex, max: lastIndex });
+                    updatePercentageDatasets(chartInstance);
+                    chartInstance.update('none');
                     updateRangeButtons(range);
                     updateVisibleVariations(chartInstance);
                 });

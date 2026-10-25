@@ -24,45 +24,88 @@ def load_psycopg2():
         ) from error
 
 
-def load_tickers():
+def load_instruments():
     anagrafica_path = Path(__file__).with_name("Anagrafica.csv")
     with anagrafica_path.open(encoding="utf-8-sig", newline="") as csv_file:
         reader = csv.DictReader(csv_file, delimiter=";")
-        if reader.fieldnames is None or "Ticker_yf" not in reader.fieldnames:
-            raise ValueError("La colonna 'Ticker_yf' manca in Anagrafica.csv")
+        required_columns = {"Ticker", "Ticker_yf", "Descrizione"}
+        if reader.fieldnames is None or not required_columns.issubset(reader.fieldnames):
+            missing_columns = required_columns - set(reader.fieldnames or [])
+            raise ValueError(
+                "Colonne mancanti in Anagrafica.csv: "
+                + ", ".join(sorted(missing_columns))
+            )
 
-        tickers = []
+        instruments = []
+        seen_tickers = set()
         for row_number, row in enumerate(reader, start=2):
-            ticker = (row.get("Ticker_yf") or "").strip()
+            ticker = (row.get("Ticker") or "").strip()
+            yahoo_ticker = (row.get("Ticker_yf") or "").strip()
             if not ticker:
+                raise ValueError(
+                    f"Ticker vuoto in Anagrafica.csv alla riga {row_number}"
+                )
+            if not yahoo_ticker:
                 raise ValueError(
                     f"Ticker_yf vuoto in Anagrafica.csv alla riga {row_number}"
                 )
-            tickers.append(ticker)
+            if ticker in seen_tickers:
+                raise ValueError(
+                    f"Ticker duplicato '{ticker}' in Anagrafica.csv "
+                    f"alla riga {row_number}"
+                )
+            seen_tickers.add(ticker)
+            description = (row.get("Descrizione") or "").strip() or None
+            instruments.append((ticker, yahoo_ticker, description))
 
-    if not tickers:
+    if not instruments:
         raise ValueError("Anagrafica.csv non contiene ticker da elaborare")
-    return tickers
+    return instruments
 
 
-def get_etf_price(ticker):
-    print(f"Recupero dati per {ticker}...")
-    etf = yf.Ticker(ticker)
+def upsert_instruments(cursor, instruments):
+    query = """
+        INSERT INTO instruments (ticker, description)
+        VALUES (%s, %s)
+        ON CONFLICT (ticker)
+        DO UPDATE SET description = EXCLUDED.description;
+    """
+    cursor.executemany(
+        query,
+        [(ticker, description) for ticker, _, description in instruments],
+    )
+
+
+def sync_instruments_to_db(instruments, db_driver):
+    connection = db_driver.connect(DATABASE_URL)
+    try:
+        with connection:
+            with connection.cursor() as cursor:
+                upsert_instruments(cursor, instruments)
+    finally:
+        connection.close()
+
+
+def get_etf_price(yahoo_ticker):
+    print(f"Recupero dati per {yahoo_ticker}...")
+    etf = yf.Ticker(yahoo_ticker)
 
     df = etf.history(period="1d")
     if df.empty:
-        print(f"Nessuna quotazione disponibile oggi per {ticker}; salto.")
+        print(f"Nessuna quotazione disponibile oggi per {yahoo_ticker}; salto.")
         return None
 
     today_date = datetime.now().strftime("%Y-%m-%d")
     today_data = df.loc[df.index.strftime("%Y-%m-%d") == today_date]
     if today_data.empty:
-        print(f"Nessuna quotazione disponibile oggi per {ticker}; salto.")
+        print(f"Nessuna quotazione disponibile oggi per {yahoo_ticker}; salto.")
         return None
 
     today_closes = today_data["Close"].dropna()
     if today_closes.empty:
-        print(f"Nessun prezzo di chiusura disponibile oggi per {ticker}; salto.")
+        print(
+            f"Nessun prezzo di chiusura disponibile oggi per {yahoo_ticker}; salto."
+        )
         return None
 
     close_price = float(today_closes.iloc[-1])
@@ -97,8 +140,11 @@ if __name__ == "__main__":
                 "La variabile d'ambiente DATABASE_URL non è impostata."
             )
 
-        for ticker in load_tickers():
-            result = get_etf_price(ticker)
+        instruments = load_instruments()
+        sync_instruments_to_db(instruments, db_driver)
+
+        for ticker, yahoo_ticker, _ in instruments:
+            result = get_etf_price(yahoo_ticker)
             if result is None:
                 continue
             date_str, price = result
