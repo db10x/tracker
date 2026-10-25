@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SWDA ETF Tracker</title>
+    <title>ETF Tracker</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js -->
@@ -17,8 +17,8 @@
 
     <div class="max-w-4xl mx-auto p-6">
         <header class="mb-8 text-center">
-            <h1 class="text-3xl font-bold text-blue-600">iShares Core MSCI World (SWDA)</h1>
-            <p class="text-gray-500 mt-2">Storico dei prezzi di chiusura registrati automaticamente</p>
+            <h1 class="text-3xl font-bold text-blue-600">Tracker titoli</h1>
+            <p class="text-gray-500 mt-2">Storico dei prezzi di chiusura dei titoli monitorati</p>
         </header>
 
         <!-- Sezione Grafico -->
@@ -123,15 +123,37 @@
                 tbody.appendChild(tr);
             });
 
-            // Prepara i dati per il grafico (cronologia temporale crescente)
-            const chartData = [...data].reverse();
-            const labels = chartData.map(d => d.date);
-            const prices = chartData.map(d => Number(d.price));
+            const dates = [...new Set(data.map(row => row.date))].sort();
+            const tickers = [...new Set(data.map(row => row.ticker))].sort();
+            const colors = [
+                '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c',
+                '#0891b2', '#c026d3', '#4d7c0f', '#ca8a04', '#475569'
+            ];
+            const pricesByTicker = new Map(
+                tickers.map(ticker => [ticker, new Map()])
+            );
+            data.forEach(row => {
+                pricesByTicker.get(row.ticker).set(row.date, Number(row.price));
+            });
+            const datasets = tickers.map((ticker, index) => {
+                const color = colors[index % colors.length];
+                return {
+                    label: ticker,
+                    data: dates.map(date => pricesByTicker.get(ticker).get(date) ?? null),
+                    borderColor: color,
+                    backgroundColor: color,
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 0,
+                    pointHoverRadius: 5
+                };
+            });
 
-            renderChart(labels, prices);
+            renderChart(dates, datasets);
         }
 
-        function renderChart(labels, prices) {
+        function renderChart(labels, datasets) {
             const ctx = document.getElementById('priceChart').getContext('2d');
             
             if (chartInstance) {
@@ -142,22 +164,12 @@
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        label: 'Prezzo SWDA (€)',
-                        data: prices,
-                        borderColor: '#2563eb',
-                        backgroundColor: 'rgba(37, 99, 235, 0.05)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.1,
-                        pointRadius: 0,
-                        pointHoverRadius: 5
-                    }]
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
                     plugins: {
-                        legend: { display: false },
+                        legend: { display: true },
                         zoom: {
                             pan: {
                                 enabled: true,
