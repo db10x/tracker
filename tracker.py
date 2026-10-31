@@ -1,5 +1,6 @@
 import csv
 import importlib
+import math
 import os
 from datetime import date, datetime
 from pathlib import Path
@@ -117,6 +118,25 @@ def get_etf_prices(yahoo_ticker):
     ]
 
 
+def get_etf_dividends(yahoo_ticker):
+    print(f"Recupero dividendi per {yahoo_ticker}...")
+    dividends = yf.Ticker(yahoo_ticker).dividends
+    if dividends.empty:
+        print(f"Nessun dividendo storico disponibile per {yahoo_ticker}.")
+        return []
+
+    rows = []
+    for event_date, amount in dividends.items():
+        amount = float(amount)
+        if not math.isfinite(amount) or amount <= 0:
+            raise ValueError(
+                f"Importo del dividendo non valido per {yahoo_ticker} "
+                f"alla data {event_date}"
+            )
+        rows.append((event_date.strftime("%Y-%m-%d"), amount))
+    return rows
+
+
 def select_prices_to_save(prices, existing_dates, today_date):
     return [
         (date_str, price)
@@ -177,6 +197,33 @@ def save_to_db(prices, ticker, db_driver):
         print(f"Salvato con successo: {date_str} - {ticker} -> {price} EUR")
 
 
+def save_dividends_to_db(dividends, ticker, db_driver):
+    if not dividends:
+        print(f"Nessun dividendo da salvare per {ticker}.")
+        return
+
+    connection = db_driver.connect(DATABASE_URL)
+    try:
+        with connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO dividends (date, ticker, amount)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (date, ticker)
+                    DO UPDATE SET amount = EXCLUDED.amount;
+                    """,
+                    [
+                        (event_date, ticker, amount)
+                        for event_date, amount in dividends
+                    ],
+                )
+    finally:
+        connection.close()
+
+    print(f"Salvati {len(dividends)} dividendi per {ticker}.")
+
+
 if __name__ == "__main__":
     try:
         db_driver = load_psycopg2()
@@ -190,9 +237,10 @@ if __name__ == "__main__":
 
         for ticker, yahoo_ticker, _ in instruments:
             prices = get_etf_prices(yahoo_ticker)
-            if prices is None:
-                continue
-            save_to_db(prices, ticker, db_driver)
+            if prices is not None:
+                save_to_db(prices, ticker, db_driver)
+            dividends = get_etf_dividends(yahoo_ticker)
+            save_dividends_to_db(dividends, ticker, db_driver)
     except Exception as e:
         print(f"Errore durante l'esecuzione: {e}")
         raise SystemExit(1) from e

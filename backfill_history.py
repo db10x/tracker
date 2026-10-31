@@ -15,7 +15,8 @@ HISTORY_START_DATE = "2022-01-01"
 
 def get_ticker_history(ticker, yahoo_ticker):
     print(f"Recupero storico per {ticker} ({yahoo_ticker})...")
-    history = yf.Ticker(yahoo_ticker).history(
+    yahoo_instrument = yf.Ticker(yahoo_ticker)
+    history = yahoo_instrument.history(
         start=HISTORY_START_DATE,
         auto_adjust=False,
     )
@@ -50,20 +51,43 @@ def get_ticker_history(ticker, yahoo_ticker):
             f"dal {HISTORY_START_DATE}"
         )
 
+    dividend_rows = []
+    for event_date, amount in yahoo_instrument.dividends.items():
+        event_date_str = event_date.strftime("%Y-%m-%d")
+        if event_date_str < HISTORY_START_DATE:
+            continue
+
+        amount = float(amount)
+        if not math.isfinite(amount) or amount <= 0:
+            raise ValueError(
+                f"Importo del dividendo non valido per {yahoo_ticker} "
+                f"alla data {event_date_str}"
+            )
+        dividend_rows.append((event_date_str, ticker, amount))
+
     print(
         f"{ticker}: {len(rows)} quotazioni "
-        f"dal {rows[0][0]} al {rows[-1][0]}"
+        f"dal {rows[0][0]} al {rows[-1][0]}; "
+        f"{len(dividend_rows)} dividendi storici"
     )
-    return rows
+    return rows, dividend_rows
 
 
-def save_history_to_db(rows, instruments, database_url, db_driver):
+def save_history_to_db(
+    price_rows, dividend_rows, instruments, database_url, db_driver
+):
     execute_values = importlib.import_module("psycopg2.extras").execute_values
-    query = """
+    price_query = """
         INSERT INTO prices (date, ticker, price)
         VALUES %s
         ON CONFLICT (date, ticker)
         DO UPDATE SET price = EXCLUDED.price;
+    """
+    dividend_query = """
+        INSERT INTO dividends (date, ticker, amount)
+        VALUES %s
+        ON CONFLICT (date, ticker)
+        DO UPDATE SET amount = EXCLUDED.amount;
     """
 
     connection = db_driver.connect(database_url)
@@ -71,11 +95,21 @@ def save_history_to_db(rows, instruments, database_url, db_driver):
         with connection:
             with connection.cursor() as cursor:
                 upsert_instruments(cursor, instruments)
-                execute_values(cursor, query, rows, page_size=1000)
+                if price_rows:
+                    execute_values(
+                        cursor, price_query, price_rows, page_size=1000
+                    )
+                if dividend_rows:
+                    execute_values(
+                        cursor, dividend_query, dividend_rows, page_size=1000
+                    )
     finally:
         connection.close()
 
-    print(f"Salvate {len(rows)} quotazioni storiche nel database.")
+    print(
+        f"Salvate {len(price_rows)} quotazioni e "
+        f"{len(dividend_rows)} dividendi storici nel database."
+    )
 
 
 def main():
@@ -84,12 +118,17 @@ def main():
         raise ValueError("La variabile d'ambiente DATABASE_URL non è impostata.")
 
     instruments = load_instruments()
-    rows = []
+    price_rows = []
+    dividend_rows = []
     for ticker, yahoo_ticker, _ in instruments:
-        rows.extend(get_ticker_history(ticker, yahoo_ticker))
+        ticker_prices, ticker_dividends = get_ticker_history(ticker, yahoo_ticker)
+        price_rows.extend(ticker_prices)
+        dividend_rows.extend(ticker_dividends)
 
     db_driver = importlib.import_module("psycopg2")
-    save_history_to_db(rows, instruments, database_url, db_driver)
+    save_history_to_db(
+        price_rows, dividend_rows, instruments, database_url, db_driver
+    )
 
 
 if __name__ == "__main__":
