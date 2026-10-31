@@ -1,11 +1,13 @@
 import csv
 import importlib
 import os
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import yfinance as yf
 from dotenv import load_dotenv
+
+PRICE_HISTORY_PERIOD = "1mo"
 
 # Carica la configurazione locale senza sovrascrivere le variabili già impostate.
 load_dotenv(Path(__file__).with_name(".env"))
@@ -86,50 +88,93 @@ def sync_instruments_to_db(instruments, db_driver):
         connection.close()
 
 
-def get_etf_price(yahoo_ticker):
+def get_etf_prices(yahoo_ticker):
     print(f"Recupero dati per {yahoo_ticker}...")
     etf = yf.Ticker(yahoo_ticker)
 
-    df = etf.history(period="1d")
+    df = etf.history(period=PRICE_HISTORY_PERIOD)
     if df.empty:
-        print(f"Nessuna quotazione disponibile oggi per {yahoo_ticker}; salto.")
-        return None
-
-    today_date = datetime.now().strftime("%Y-%m-%d")
-    today_data = df.loc[df.index.strftime("%Y-%m-%d") == today_date]
-    if today_data.empty:
-        print(f"Nessuna quotazione disponibile oggi per {yahoo_ticker}; salto.")
-        return None
-
-    today_closes = today_data["Close"].dropna()
-    if today_closes.empty:
         print(
-            f"Nessun prezzo di chiusura disponibile oggi per {yahoo_ticker}; salto."
+            f"Nessuna quotazione disponibile negli ultimi "
+            f"{PRICE_HISTORY_PERIOD} per {yahoo_ticker}; salto."
         )
         return None
 
-    close_price = float(today_closes.iloc[-1])
+    if "Close" not in df.columns:
+        raise ValueError(f"La colonna 'Close' manca per {yahoo_ticker}")
 
-    return today_date, close_price
+    close_prices = df["Close"].dropna()
+    if close_prices.empty:
+        print(
+            f"Nessun prezzo di chiusura disponibile negli ultimi "
+            f"{PRICE_HISTORY_PERIOD} per {yahoo_ticker}; salto."
+        )
+        return None
+
+    return [
+        (session_date.strftime("%Y-%m-%d"), float(close_price))
+        for session_date, close_price in close_prices.items()
+    ]
 
 
-def save_to_db(date_str, ticker, price, db_driver):
+def select_prices_to_save(prices, existing_dates, today_date):
+    return [
+        (date_str, price)
+        for date_str, price in prices
+        if date_str not in existing_dates or date_str == today_date
+    ]
+
+
+def save_to_db(prices, ticker, db_driver):
+    if not prices:
+        return
+
     print("Connessione al database...")
-    conn = db_driver.connect(DATABASE_URL)
-    cursor = conn.cursor()
+    connection = db_driver.connect(DATABASE_URL)
+    try:
+        with connection:
+            with connection.cursor() as cursor:
+                date_strings = [date_str for date_str, _ in prices]
+                start_date = date.fromisoformat(min(date_strings))
+                end_date = date.fromisoformat(max(date_strings))
+                cursor.execute(
+                    """
+                    SELECT date
+                    FROM prices
+                    WHERE ticker = %s AND date BETWEEN %s AND %s;
+                    """,
+                    (ticker, start_date, end_date),
+                )
+                existing_dates = {
+                    existing_date.isoformat()
+                    for (existing_date,) in cursor.fetchall()
+                }
+                today_date = datetime.now().date().isoformat()
+                prices_to_save = select_prices_to_save(
+                    prices, existing_dates, today_date
+                )
+                if prices_to_save:
+                    cursor.executemany(
+                        """
+                        INSERT INTO prices (date, ticker, price)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (date, ticker)
+                        DO UPDATE SET price = EXCLUDED.price;
+                        """,
+                        [
+                            (date_str, ticker, price)
+                            for date_str, price in prices_to_save
+                        ],
+                    )
+    finally:
+        connection.close()
 
-    query = """
-        INSERT INTO prices (date, ticker, price)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (date, ticker)
-        DO UPDATE SET price = EXCLUDED.price;
-    """
-    cursor.execute(query, (date_str, ticker, price))
+    if not prices_to_save:
+        print(f"Nessuna nuova quotazione da salvare per {ticker}.")
+        return
 
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print(f"Salvato con successo: {date_str} - {ticker} -> {price} EUR")
+    for date_str, price in prices_to_save:
+        print(f"Salvato con successo: {date_str} - {ticker} -> {price} EUR")
 
 
 if __name__ == "__main__":
@@ -144,11 +189,10 @@ if __name__ == "__main__":
         sync_instruments_to_db(instruments, db_driver)
 
         for ticker, yahoo_ticker, _ in instruments:
-            result = get_etf_price(yahoo_ticker)
-            if result is None:
+            prices = get_etf_prices(yahoo_ticker)
+            if prices is None:
                 continue
-            date_str, price = result
-            save_to_db(date_str, ticker, price, db_driver)
+            save_to_db(prices, ticker, db_driver)
     except Exception as e:
         print(f"Errore durante l'esecuzione: {e}")
         raise SystemExit(1) from e

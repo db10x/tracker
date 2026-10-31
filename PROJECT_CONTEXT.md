@@ -32,9 +32,9 @@ Non ci sono backend applicativi o framework di build: la UI è una pagina static
 - `Anagrafica.csv` viene letto a ogni esecuzione con separatore `;` e deve contenere `Ticker`, `Ticker_yf` e `Descrizione`. `Ticker` deve essere univoco e entrambi i ticker devono essere valorizzati; una descrizione vuota è ammessa.
 - `Ticker_yf` è usato solo per le richieste a Yahoo Finance. `Ticker` è la chiave canonica salvata in `prices.ticker` e `instruments.ticker`.
 - Entrambi gli script sincronizzano in `instruments` il ticker e la descrizione del CSV tramite upsert. `tracker.py` esegue la sincronizzazione prima del ciclo dei prezzi; `backfill_history.py` sincronizza l'anagrafica e lo storico nella stessa transazione.
-- `get_etf_price()` richiede tramite `yfinance` lo storico giornaliero di `Ticker_yf` e restituisce il prezzo solo se Yahoo Finance fornisce una chiusura non nulla con data pari a oggi. Se non ci sono dati di oggi (per esempio nei giorni di borsa chiusa), il ticker viene saltato e non viene scritto nel database.
-- Lo script è  pianificato ogni giorno. Per i ticker disponibili, la data salvata è quella corrente dell'ambiente di esecuzione.
-- `save_to_db()` esegue un upsert sulla tabella `prices`, con conflitto sulla coppia `(date, ticker)`; in caso di conflitto aggiorna `price`.
+- `get_etf_prices()` richiede tramite `yfinance` le chiusure giornaliere dell'ultimo mese per `Ticker_yf` e restituisce le date effettive comunicate da Yahoo Finance.
+- `save_to_db()` verifica quali date recenti per ticker esistono già in `prices`: inserisce le date mancanti e aggiorna la quotazione odierna se disponibile. La finestra mensile consente di recuperare quotazioni aggiornate settimanalmente o pubblicate in ritardo, con la loro data effettiva; nei giorni senza nuove quotazioni non vengono creati record artificiali.
+- `save_to_db()` usa un upsert sulla tabella `prices`, con conflitto sulla coppia `(date, ticker)`; in caso di conflitto aggiorna `price`.
 - All'avvio lo script verifica che `psycopg2` sia installato e che `DATABASE_URL` sia impostata; in caso contrario stampa un errore esplicito e termina con codice 1. `psycopg2-binary` è già dichiarato in `requirements.txt`. La connessione/cursore vengono chiusi solo nel percorso senza eccezioni.
 - `backfill_history.py` è uno script manuale separato: per ogni `Ticker_yf` usa `Ticker.history(start="2022-01-01", auto_adjust=False)`, registra i prezzi `Close` usando `Ticker` alle date effettive delle sedute dal 1° gennaio 2022 in poi e aggiorna i conflitti `(date, ticker)`. Scarica e valida tutti i ticker prima di sincronizzare l'anagrafica e i prezzi in un'unica transazione, così un errore di download non lascia un caricamento parziale.
 - Entrambi gli script caricano `DATABASE_URL` dal file `.env` nella cartella del progetto tramite `python-dotenv`, senza sovrascrivere un valore già presente nell'ambiente. `.env` è escluso da Git; `.env.example` contiene solo un URI segnaposto.
@@ -91,7 +91,7 @@ Al momento non sono presenti test automatizzati, file di configurazione di test,
 
 - Mantenere coerenti i nomi tabella/colonne tra script, pagina, schema Supabase e README.
 - Per registrare più ticker nella stessa data, mantenere il vincolo composto `UNIQUE(date, ticker)` allineato con la clausola `ON CONFLICT(date, ticker)`.
-- Il job giornaliero scrive solo ticker con dati Yahoo Finance datati nel giorno di esecuzione; in giornate senza contrattazioni non crea record per i ticker senza una quotazione odierna.
+- Il job giornaliero recupera le quotazioni mancanti tra quelle disponibili nell'ultimo mese Yahoo Finance, registrandole alle date delle rispettive sedute; in giornate senza contrattazioni non crea record artificiali.
 - Valutare l'orario cron in UTC rispetto alle aspettative locali e ai cambi di ora legale; lo schedule GitHub non è espresso nel fuso italiano.
 - Qualunque modifica a schema, policy RLS o credenziali va applicata e verificata anche sul progetto Supabase remoto: il repository non contiene migrazioni né policy.
 - Evitare di committare segreti. Per cambiare accesso pubblico, usare la chiave publishable/anon con policy RLS minime e mantenere `DATABASE_URL` nei secret GitHub Actions.

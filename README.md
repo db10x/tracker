@@ -109,7 +109,7 @@ python tracker.py
 
 Nel file `.env`, sostituisci l'URI di esempio con la connection string del tuo database. Salva `.env` nella cartella del progetto: entrambi gli script lo caricano automaticamente e il file è escluso da Git. Non pubblicare né condividere questo file. Se `DATABASE_URL` è già definita nell'ambiente di Windows, ha la precedenza sul valore in `.env`. Se `psycopg2` manca, installa le dipendenze con il comando indicato sopra. Il file `Anagrafica.csv` deve rimanere nella stessa cartella degli script.
 
-Il job giornaliero verifica che Yahoo Finance abbia una quotazione con data odierna per ciascun ticker. Se non ci sono dati (per esempio nei giorni di borsa chiusa), quel ticker viene saltato e il prezzo della seduta precedente non viene registrato con la data corrente; gli altri ticker con dati odierni vengono salvati normalmente.
+Il job giornaliero legge da Yahoo Finance le quotazioni dell'ultimo mese. Salva ogni seduta recente non ancora presente nel database usando la data effettiva fornita da Yahoo Finance; questa finestra consente di recuperare anche prezzi aggiornati settimanalmente o pubblicati in ritardo, senza assegnarli al giorno sbagliato. La quotazione odierna, se disponibile, viene aggiornata anche se esiste già; nei giorni senza nuove quotazioni non vengono creati record artificiali.
 
 ### Caricamento iniziale dello storico
 
