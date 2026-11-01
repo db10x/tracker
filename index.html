@@ -1,701 +1,1006 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ETF Tracker</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Andamento dei titoli in portafoglio e filtri interattivi per il grafico.">
+    <title>Tracker Titoli — Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Hammer.js richiesto dal plugin Zoom per il pan tramite trascinamento -->
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-    <!-- Plugin Zoom per Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
-    <!-- Libreria ufficiale Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         try {
-            document.documentElement.dataset.theme = localStorage.getItem('tracker-theme') === 'dark'
-                ? 'dark'
-                : 'light';
+            document.documentElement.dataset.theme = localStorage.getItem('tracker-theme') === 'light'
+                ? 'light'
+                : 'dark';
         } catch (error) {
             console.error('Impossibile leggere il tema salvato:', error);
-            document.documentElement.dataset.theme = 'light';
         }
     </script>
     <style>
         :root {
-            color-scheme: light;
-        }
-
-        :root[data-theme="dark"] {
             color-scheme: dark;
+            --page: #080c14;
+            --surface: rgba(15, 23, 42, .82);
+            --surface-raised: #0b1220;
+            --border: rgba(51, 65, 85, .72);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --faint: #64748b;
+            --accent: #38bdf8;
+            --positive: #34d399;
+            --negative: #fb7185;
         }
 
-        :root[data-theme="dark"] body {
-            background-color: #111827;
-            color: #f3f4f6;
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --page: #f1f5f9;
+            --surface: rgba(255, 255, 255, .92);
+            --surface-raised: #f8fafc;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --muted: #64748b;
+            --faint: #94a3b8;
+            --accent: #0284c7;
+            --positive: #059669;
+            --negative: #e11d48;
         }
 
-        :root[data-theme="dark"] .bg-white {
-            background-color: #1f2937;
+        * { box-sizing: border-box; }
+
+        body {
+            min-width: 320px;
+            min-height: 100vh;
+            margin: 0;
+            background:
+                radial-gradient(ellipse at 75% -10%, rgba(37, 99, 235, .13), transparent 36rem),
+                var(--page);
+            color: var(--text);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            -webkit-font-smoothing: antialiased;
         }
 
-        :root[data-theme="dark"] .bg-gray-50 {
-            background-color: #111827;
+        button, select { font: inherit; }
+        button { color: inherit; }
+
+        .app-header {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            border-bottom: 1px solid var(--border);
+            background: color-mix(in srgb, var(--page) 88%, transparent);
+            backdrop-filter: blur(16px);
         }
 
-        :root[data-theme="dark"] .bg-gray-100 {
-            background-color: #374151;
+        .header-inner, main {
+            width: min(1540px, calc(100% - 48px));
+            margin: 0 auto;
         }
 
-        :root[data-theme="dark"] .hover\:bg-gray-200:hover {
-            background-color: #4b5563;
+        .header-inner {
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
         }
 
-        :root[data-theme="dark"] .hover\:bg-gray-50:hover {
-            background-color: #374151;
+        .brand, .header-actions, .portfolio-control, .chart-toolbar,
+        .toolbar-group, .asset-main, .asset-metrics {
+            display: flex;
+            align-items: center;
         }
 
-        :root[data-theme="dark"] .text-gray-900 {
-            color: #f9fafb;
+        .brand { gap: 9px; min-width: 0; }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 auto;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(56, 189, 248, .35);
+            border-radius: 12px;
+            background: linear-gradient(145deg, rgba(8, 145, 178, .24), rgba(37, 99, 235, .2));
+            color: var(--accent);
         }
 
-        :root[data-theme="dark"] .text-gray-800 {
-            color: #f3f4f6;
+        .brand-mark svg { width: 18px; height: 18px; }
+        .brand-title { margin: 0; color: var(--text); font-size: 14px; font-weight: 700; letter-spacing: -.02em; }
+        .brand-caption { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
+        .header-actions { gap: 8px; }
+
+        .portfolio-control {
+            gap: 9px;
+            height: 34px;
+            min-width: 0;
+            padding: 0 8px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--surface-raised);
         }
 
-        :root[data-theme="dark"] .text-gray-700 {
-            color: #e5e7eb;
+        .portfolio-control svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--accent); }
+        .control-copy { min-width: 0; display: flex; align-items: center; gap: 8px; }
+        .control-label { flex: 0 0 auto; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
+
+        select {
+            width: 200px;
+            max-width: 30vw;
+            border: 0;
+            outline: 0;
+            background: transparent;
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 600;
         }
 
-        :root[data-theme="dark"] .text-gray-600,
-        :root[data-theme="dark"] .hover\:text-gray-600:hover {
-            color: #d1d5db;
+        select option { background: var(--page); color: var(--text); }
+
+        .icon-button, .toolbar-button, .range-button {
+            border: 1px solid var(--border);
+            background: var(--surface-raised);
+            cursor: pointer;
+            transition: border-color .16s ease, color .16s ease, background .16s ease;
         }
 
-        :root[data-theme="dark"] .text-gray-500,
-        :root[data-theme="dark"] .text-gray-400 {
-            color: #9ca3af;
+        .icon-button {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            color: var(--muted);
         }
 
-        :root[data-theme="dark"] .text-green-600 {
-            color: #4ade80;
+        .icon-button:hover, .toolbar-button:hover, .range-button:hover:not(:disabled) {
+            border-color: rgba(56, 189, 248, .5);
+            color: var(--text);
         }
 
-        :root[data-theme="dark"] .text-red-600 {
-            color: #f87171;
+        .icon-button svg { width: 17px; height: 17px; }
+
+        main { padding: 26px 0 42px; }
+        .panel {
+            border: 1px solid var(--border);
+            border-radius: 15px;
+            background: var(--surface);
+            box-shadow: 0 14px 36px rgba(0, 0, 0, .1);
         }
 
-        :root[data-theme="dark"] .text-blue-600 {
-            color: #60a5fa;
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.75fr) minmax(330px, .9fr);
+            align-items: stretch;
+            gap: 18px;
         }
 
-        :root[data-theme="dark"] .text-blue-700 {
-            color: #bfdbfe;
+        .panel { min-width: 0; padding: 19px; }
+        .chart-panel, .assets-panel { min-height: 620px; display: flex; flex-direction: column; }
+        .section-description { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+
+        .count-badge {
+            flex: 0 0 auto;
+            padding: 4px 8px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--surface-raised);
+            color: var(--muted);
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 10px;
         }
 
-        :root[data-theme="dark"] .bg-blue-100 {
-            background-color: #1e3a8a;
+        .chart-toolbar { flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 4px 0 8px; }
+        .toolbar-group { flex-wrap: wrap; gap: 5px; }
+        .chart-display-controls { display: flex; align-items: center; gap: 10px; }
+
+        .range-button, .mode-button, .fullscreen-button {
+            min-height: 30px;
+            padding: 0 10px;
+            border-radius: 8px;
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 600;
         }
 
-        :root[data-theme="dark"] .border-gray-100,
-        :root[data-theme="dark"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
-            border-color: #374151;
+        .range-button {
+            border: 1px solid var(--border);
+            background: var(--surface-raised);
+            cursor: pointer;
+            transition: border-color .16s ease, color .16s ease, background .16s ease;
         }
 
-        :root[data-theme="dark"] .border-gray-200 {
-            border-color: #4b5563;
+        .range-button[aria-pressed="true"] {
+            border-color: rgba(56, 189, 248, .35);
+            background: rgba(8, 145, 178, .17);
+            color: var(--accent);
         }
 
-        .theme-toggle:focus-visible {
-            outline: 2px solid #2563eb;
-            outline-offset: 2px;
+        .mode-switch { display: flex; align-items: center; }
+
+        .mode-button {
+            min-height: 30px;
+            padding: 0 10px;
+            border: 1px solid var(--border);
+            background: var(--surface-raised);
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: border-color .16s ease, color .16s ease, background .16s ease;
         }
 
-        #chart-canvas-container {
-            height: 390px;
+        .mode-button:first-child { border-radius: 8px 0 0 8px; }
+        .mode-button + .mode-button { margin-left: -1px; border-radius: 0 8px 8px 0; }
+
+        .mode-button[aria-pressed="true"] {
             position: relative;
+            z-index: 1;
+            border-color: rgba(56, 189, 248, .35);
+            background: #1e293b;
+            color: #22d3ee;
         }
 
-        #dividend-tooltip {
-            pointer-events: none;
+        :root[data-theme="light"] .mode-button[aria-pressed="true"] {
+            background: #e2e8f0;
+            color: #0284c7;
+        }
+
+        .fullscreen-button {
+            width: 30px;
+            height: 30px;
+            min-height: 30px;
+            flex: 0 0 auto;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface-raised);
+            color: var(--muted);
+            cursor: pointer;
+            transition: border-color .16s ease, color .16s ease, background .16s ease;
+        }
+
+        .fullscreen-button:hover {
+            border-color: rgba(56, 189, 248, .5);
+            color: var(--accent);
+        }
+
+        .fullscreen-button svg { width: 16px; height: 16px; }
+        .fullscreen-button .fullscreen-exit-icon { display: none; }
+        .fullscreen-button[aria-pressed="true"] .fullscreen-enter-icon { display: none; }
+        .fullscreen-button[aria-pressed="true"] .fullscreen-exit-icon { display: block; }
+        .chart-panel:fullscreen {
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            overflow: auto;
+            border-radius: 0;
+            background: var(--page);
+        }
+
+        button:focus-visible, select:focus-visible, .asset-row:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        button:disabled { cursor: not-allowed; opacity: .48; }
+
+        .chart-caption {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            min-height: 30px;
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        #active-series { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px; }
+
+        .series-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 7px;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            background: var(--surface-raised);
+            color: var(--text);
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 9px;
+        }
+
+        .series-dot { width: 7px; height: 7px; border-radius: 50%; }
+        .series-variation { font-weight: 700; }
+
+        .chart-wrap {
+            position: relative;
+            flex: 1;
+            min-height: 380px;
+            padding: 13px 10px 8px;
+            border: 1px solid var(--border);
+            border-radius: 11px;
+            background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+        }
+
+        .chart-empty {
             position: absolute;
-            z-index: 10;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            color: var(--muted);
+            font-size: 12px;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .chart-empty[hidden] { display: none; }
+        #price-chart { width: 100% !important; height: 100% !important; }
+
+        .dividend-tooltip {
+            position: absolute;
+            z-index: 3;
+            padding: 6px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface-raised);
+            box-shadow: 0 8px 22px rgba(0, 0, 0, .22);
+            color: var(--text);
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 9px;
+            line-height: 1.4;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .dividend-tooltip[hidden] { display: none; }
+        .dividend-tooltip-date { display: block; margin-bottom: 6px; }
+        .dividend-tooltip-value { display: flex; align-items: center; gap: 8px; }
+        .dividend-tooltip-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
+
+        .assets-panel { padding: 0; overflow: hidden; }
+        .assets-subheading {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 82px 64px;
+            column-gap: 8px;
+            padding: 5px 12px 5px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+        }
+
+        .sort-button {
+            min-width: 0;
+            padding: 3px 0;
+            border: 0;
+            background: transparent;
+            color: var(--faint);
+            cursor: pointer;
+            font-size: inherit;
+            font-weight: inherit;
+            letter-spacing: inherit;
+            text-align: left;
+            text-transform: inherit;
             white-space: nowrap;
         }
 
-        #chart-section:fullscreen {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            margin: 0;
-            overflow: auto;
-            border-radius: 0;
+        .sort-button:hover, .sort-button[aria-sort="ascending"], .sort-button[aria-sort="descending"] {
+            color: var(--accent);
         }
 
-        #chart-section:fullscreen #chart-canvas-container {
-            flex: 1;
-            height: auto;
-            min-height: 0;
+        .sort-button[data-sort="price"], .sort-button[data-sort="variation"] { text-align: right; }
+        .sort-indicator { display: inline-block; margin-left: 2px; }
+
+        #asset-list { flex: 1; overflow: auto; }
+
+        .asset-row {
+            width: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 82px 64px;
+            grid-template-rows: auto auto;
+            column-gap: 8px;
+            row-gap: 3px;
+            align-items: center;
+            padding: 6px 12px 6px 14px;
+            border: 0;
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+            border-left: 2px solid transparent;
+            background: transparent;
+            text-align: left;
+            cursor: pointer;
+            transition: background .16s ease, border-color .16s ease;
+        }
+
+        .asset-row:hover { background: color-mix(in srgb, var(--surface-raised) 82%, transparent); }
+        .asset-row.is-active { border-left-color: var(--asset-color, var(--accent)); background: color-mix(in srgb, var(--asset-color, var(--accent)) 9%, transparent); }
+        .asset-row:disabled { cursor: default; opacity: .55; }
+        .asset-main { display: contents; }
+        .asset-identity { min-width: 0; display: flex; align-items: center; gap: 9px; }
+        .asset-text { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+        .asset-identity { grid-column: 1; grid-row: 1; }
+
+        .asset-dot {
+            width: 8px;
+            height: 8px;
+            flex: 0 0 auto;
+            border: 1px solid var(--asset-color, var(--faint));
+            border-radius: 50%;
+            background: var(--asset-color, transparent);
+        }
+
+        .asset-ticker { flex: 0 0 auto; color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; font-weight: 700; }
+        .asset-description { min-width: 0; max-width: 190px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+        .asset-price, .asset-variation { color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; font-weight: 600; text-align: right; white-space: nowrap; }
+        .asset-price { grid-column: 2; grid-row: 1; }
+        .asset-variation { grid-column: 3; grid-row: 1; }
+        .asset-metrics { grid-column: 1 / -1; grid-row: 2; margin-left: 17px; color: var(--faint); font-family: "SFMono-Regular", Consolas, monospace; font-size: 9px; line-height: 1.2; }
+
+        .variation-positive { color: var(--positive) !important; }
+        .variation-negative { color: var(--negative) !important; }
+        .load-status {
+            margin: 12px 0 0;
+            padding: 10px 12px;
+            border: 1px solid rgba(251, 113, 133, .3);
+            border-radius: 9px;
+            background: rgba(190, 24, 93, .1);
+            color: var(--negative);
+            font-size: 11px;
+        }
+
+        .load-status[hidden] { display: none; }
+
+        @media (max-width: 900px) {
+            .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+            .chart-panel, .assets-panel { min-height: 0; }
+            .assets-panel { max-height: 580px; }
+            #asset-list { min-height: 280px; }
+        }
+
+        @media (max-width: 600px) {
+            .header-inner, main { width: min(100% - 28px, 1540px); }
+            .header-inner { min-height: 54px; gap: 8px; }
+            .brand-caption { display: none; }
+            .brand-mark { width: 32px; height: 32px; }
+            .brand-title { font-size: 13px; }
+            .header-actions { gap: 6px; }
+            .portfolio-control { max-width: 185px; padding: 0 7px; gap: 6px; }
+            .portfolio-control svg { display: none; }
+            .control-copy { gap: 5px; }
+            .control-label { font-size: 8px; letter-spacing: .06em; }
+            select { width: 105px; max-width: 32vw; }
+            select { font-size: 10px; }
+            .icon-button { width: 34px; height: 34px; }
+            main { padding-top: 18px; }
+            .panel { padding: 14px; }
+            .assets-panel { padding: 0; }
+            .chart-wrap { min-height: 300px; padding: 8px 4px; }
+        }
+
+        @media (max-width: 480px) {
+            .portfolio-control { max-width: 160px; }
+            .control-label { font-size: 7px; }
+            select { width: 85px; max-width: 27vw; font-size: 9px; }
+            .assets-subheading, .asset-row {
+                grid-template-columns: minmax(0, 1fr) 68px 54px;
+                column-gap: 5px;
+            }
+
+            .asset-row { padding-right: 8px; padding-left: 10px; }
+            .asset-identity { gap: 6px; }
+            .asset-text { gap: 5px; }
+            .asset-ticker { font-size: 10px; }
+            .asset-description { font-size: 8px; }
+            .asset-price, .asset-variation { font-size: 9px; }
+        }
+
+        @media (min-width: 901px) {
+            .header-inner { height: 58px; min-height: 58px; }
+            main {
+                height: calc(100vh - 59px);
+                min-height: 0;
+                display: flex;
+                flex-direction: column;
+                padding: 16px 0;
+            }
+
+            .dashboard-grid { flex: 1; min-height: 0; }
+            .chart-panel, .assets-panel { height: 100%; min-height: 0; }
+            .chart-wrap { min-height: 0; }
+            #asset-list { min-height: 0; }
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans">
-
-    <div class="max-w-4xl mx-auto p-6">
-        <header class="mb-8 text-center">
-            <div class="flex justify-end mb-2">
-                <button id="toggle-theme" type="button" aria-pressed="false"
-                    class="theme-toggle text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                    Tema scuro
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand">
+                <div class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M3 17l6-6 4 4 8-9M15 6h6v6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="brand-title">Tracker Titoli</h1>
+                    <p class="brand-caption">Panoramica del portafoglio</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <label class="portfolio-control" for="portfolio-select">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                        <path d="M3 7a2 2 0 012-2h5l2 2h7a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" stroke-width="1.7" stroke-linejoin="round"></path>
+                    </svg>
+                    <span class="control-copy">
+                        <span class="control-label">Portafoglio attivo</span>
+                        <select id="portfolio-select" aria-label="Seleziona portafoglio" disabled>
+                            <option value="">Caricamento…</option>
+                        </select>
+                    </span>
+                </label>
+                <button id="theme-toggle" class="icon-button" type="button" aria-label="Attiva tema chiaro" title="Cambia tema">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4" stroke-width="1.8"></circle>
+                        <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3l1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3l1.42-1.42" stroke-width="1.8" stroke-linecap="round"></path>
+                    </svg>
                 </button>
             </div>
-            <h1 class="text-3xl font-bold text-blue-600">Tracker titoli</h1>
-            <p class="text-gray-500 mt-2">Storico dei prezzi di chiusura dei titoli monitorati</p>
-        </header>
-
-        <div class="mb-4 flex flex-wrap items-center gap-3">
-            <label for="portfolio-select" class="text-sm font-medium text-gray-600">Portafoglio</label>
-            <select id="portfolio-select"
-                class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm">
-            </select>
         </div>
+    </header>
 
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-gray-50 text-gray-400 text-xs uppercase tracking-wider">
-                            <th class="py-2 px-6 font-semibold" aria-sort="ascending">
-                                <button type="button" data-summary-sort="ticker" class="hover:text-gray-600">Ticker</button>
-                            </th>
-                            <th class="py-2 px-6 font-semibold" aria-sort="none">
-                                <button type="button" data-summary-sort="description" class="hover:text-gray-600">Descrizione</button>
-                            </th>
-                            <th class="py-2 px-6 font-semibold text-right" aria-sort="none">
-                                <button type="button" data-summary-sort="quantity" class="hover:text-gray-600">Quantità</button>
-                            </th>
-                            <th class="py-2 px-6 font-semibold text-right" aria-sort="none">
-                                <button type="button" data-summary-sort="price" class="hover:text-gray-600">Ultimo prezzo</button>
-                            </th>
-                            <th class="py-2 px-6 font-semibold text-right" aria-sort="none">
-                                <button type="button" data-summary-sort="variation" class="hover:text-gray-600">Variazione %</button>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody id="ticker-summary-body" class="divide-y divide-gray-100 text-sm">
-                        <!-- I dati verranno inseriti qui da JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-            <p id="load-status" class="hidden px-6 py-3 text-sm text-red-600" role="status" aria-live="polite"></p>
-        </div>
-
-        <!-- Sezione Grafico -->
-        <div id="chart-section" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8 relative">
-            <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" data-range="1m" aria-pressed="false"
-                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                        1M
-                    </button>
-                    <button type="button" data-range="1y" aria-pressed="false"
-                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                        1Y
-                    </button>
-                    <button type="button" data-range="ytd" aria-pressed="false"
-                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                        YTD
-                    </button>
-                    <button type="button" data-range="all" aria-pressed="false"
-                        class="range-button text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                        Tutto
-                    </button>
+    <main>
+        <div class="dashboard-grid">
+            <section class="panel chart-panel" aria-label="Grafico storico dei titoli">
+                <div class="chart-toolbar">
+                    <div class="toolbar-group" role="group" aria-label="Intervallo del grafico">
+                        <button class="range-button" type="button" data-range="1m" aria-pressed="false" disabled>1M</button>
+                        <button class="range-button" type="button" data-range="1y" aria-pressed="false" disabled>1A</button>
+                        <button class="range-button" type="button" data-range="ytd" aria-pressed="false" disabled>YTD</button>
+                        <button class="range-button" type="button" data-range="all" aria-pressed="true" disabled>Tutto</button>
+                    </div>
+                    <div class="chart-display-controls">
+                        <div class="mode-switch" role="group" aria-label="Modalità di visualizzazione">
+                            <button id="chart-mode-absolute" class="mode-button" type="button" aria-pressed="true" disabled>Prezzo (€)</button>
+                            <button id="chart-mode-percentage" class="mode-button" type="button" aria-pressed="false" disabled>Percentuale (%)</button>
+                        </div>
+                        <button id="toggle-chart-fullscreen" class="fullscreen-button" type="button"
+                            aria-label="Visualizza il grafico a schermo intero" title="Schermo intero" aria-pressed="false">
+                            <svg class="fullscreen-enter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3M8 8 4 4m12 4 4-4M8 16l-4 4m12-4 4 4"
+                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                            <svg class="fullscreen-exit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                <path d="m3 3 6 6m0-6v6H3m18-6-6 6m0-6v6h6M3 21l6-6m0 6v-6H3m18 6-6-6m0 6v-6h6"
+                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button id="toggle-chart-mode" type="button" aria-pressed="false"
-                        class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                        Percentuale
-                    </button>
-                    <button id="toggle-fullscreen" type="button" aria-pressed="false"
-                        class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
-                        Schermo intero
-                    </button>
+                <div class="chart-caption">
+                    <div id="active-series" aria-label="Titoli visualizzati"></div>
                 </div>
-            </div>
-            <div class="flex flex-wrap items-baseline gap-2 mb-3 text-xs" aria-live="polite">
-                <span class="text-gray-500">Variazione nel periodo:</span>
-                <div id="chart-variation" class="flex flex-wrap gap-x-4 gap-y-1"></div>
-            </div>
-            <p class="mb-2 text-xs text-gray-500">Il marcatore “D” indica un dividendo; passa il puntatore per vedere l'importo per azione.</p>
-            <div id="chart-canvas-container">
-                <canvas id="priceChart" width="400" height="150"></canvas>
-                <div id="dividend-tooltip" class="hidden rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg"
-                    role="tooltip"></div>
-            </div>
-            <p id="fullscreen-status" class="sr-only" role="status" aria-live="polite"></p>
-        </div>
+                <div class="chart-wrap">
+                    <canvas id="price-chart" role="img" aria-label="Grafico storico dei prezzi"></canvas>
+                    <div id="chart-empty" class="chart-empty">Seleziona almeno un titolo dall'elenco per visualizzare il grafico.</div>
+                    <div id="dividend-tooltip" class="dividend-tooltip" role="tooltip" hidden></div>
+                </div>
+                <p id="load-status" class="load-status" role="status" aria-live="polite" hidden></p>
+            </section>
 
-    </div>
+            <section class="panel assets-panel" aria-label="Titoli del portafoglio">
+                <div class="assets-subheading" role="row">
+                    <button class="sort-button" type="button" data-sort="ticker" aria-sort="ascending">Ticker<span class="sort-indicator" aria-hidden="true">↑</span></button>
+                    <button class="sort-button" type="button" data-sort="price" aria-sort="none">Prezzo<span class="sort-indicator" aria-hidden="true"></span></button>
+                    <button class="sort-button" type="button" data-sort="variation" aria-sort="none">Var. %<span class="sort-indicator" aria-hidden="true"></span></button>
+                </div>
+                <div id="asset-list" aria-label="Titoli nel portafoglio">
+                    <p class="section-description" style="padding:18px">Caricamento dei dati…</p>
+                </div>
+            </section>
+        </div>
+    </main>
 
     <script>
-        // --- CONFIGURAZIONE SUPABASE ---
         const SUPABASE_URL = 'https://wbwwjwfhgvrwtoaitleh.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_mMYcQfDTg7ziPFS_Nrb5PA_4I8KVBet';
-
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        let chartInstance = null; // Riferimento globale al grafico per gestire il reset
-        let updateVisibleVariations = () => {};
-        let percentageMode = false;
-        let priceRecords = [];
-        let descriptionsByTicker = new Map();
-        let activePortfolioId = '';
-        let activePortfolioQuantities = new Map();
-        let portfolioRequestId = 0;
-        let summarySortState = { key: 'ticker', direction: 'asc' };
+        const seriesColors = [
+            '#38bdf8', '#a78bfa', '#34d399', '#fb7185', '#fbbf24', '#2dd4bf',
+            '#818cf8', '#f472b6', '#a3e635', '#fb923c', '#22d3ee', '#c084fc'
+        ];
 
+        let chartInstance = null;
+        let portfolioRequestId = 0;
+        let activePortfolioId = '';
+        let summaries = [];
+        let selectedTickers = new Set();
+        let selectedRange = 'all';
+        let percentageMode = false;
+        let summarySort = { key: 'ticker', direction: 'asc' };
+
+        const numberFormat = new Intl.NumberFormat('it-IT', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
         function isDarkTheme() {
             return document.documentElement.dataset.theme === 'dark';
-        }
-
-        function getSeriesColor(index) {
-            const hue = (index * 137.508) % 360;
-            const lightness = isDarkTheme() ? 65 : 45;
-            return `hsl(${hue.toFixed(1)}, 78%, ${lightness}%)`;
-        }
-
-        function updateThemeButton() {
-            const darkTheme = isDarkTheme();
-            const themeButton = document.getElementById('toggle-theme');
-            themeButton.textContent = darkTheme ? 'Tema chiaro' : 'Tema scuro';
-            themeButton.setAttribute('aria-label', `Attiva tema ${darkTheme ? 'chiaro' : 'scuro'}`);
-            themeButton.setAttribute('aria-pressed', String(darkTheme));
-        }
-
-        function updateChartTheme() {
-            if (!chartInstance) {
-                return;
-            }
-
-            const darkTheme = isDarkTheme();
-            const textColor = darkTheme ? '#d1d5db' : '#666';
-            chartInstance.options.plugins.legend.labels.color = textColor;
-            chartInstance.options.scales.x.ticks.color = textColor;
-            chartInstance.options.scales.y.ticks.color = textColor;
-            chartInstance.options.scales.y.grid.color = darkTheme ? '#374151' : '#f3f4f6';
-            chartInstance.data.datasets.forEach((dataset, index) => {
-                const color = getSeriesColor(index);
-                dataset.borderColor = color;
-                dataset.backgroundColor = color;
-            });
-            chartInstance.update('none');
-        }
-
-        const themeButton = document.getElementById('toggle-theme');
-        updateThemeButton();
-        themeButton.addEventListener('click', () => {
-            const theme = isDarkTheme() ? 'light' : 'dark';
-            document.documentElement.dataset.theme = theme;
-            updateThemeButton();
-            updateChartTheme();
-            try {
-                localStorage.setItem('tracker-theme', theme);
-            } catch (error) {
-                console.error('Impossibile salvare il tema selezionato:', error);
-            }
-        });
-
-        async function fetchData() {
-            const { data: instruments, error: instrumentsError } = await supabaseClient
-                .from('instruments')
-                .select('ticker, description');
-
-            if (instrumentsError) {
-                console.error('Errore nel recupero delle descrizioni:', instrumentsError);
-                showLoadError('Errore nel caricamento delle descrizioni.');
-                return;
-            }
-
-            descriptionsByTicker = new Map(
-                instruments.map(instrument => [instrument.ticker, instrument.description || ''])
-            );
-            const { data: portfolios, error: portfoliosError } = await supabaseClient
-                .from('portfolios')
-                .select('id, name')
-                .order('name', { ascending: true });
-
-            if (portfoliosError) {
-                console.error('Errore nel recupero dei portafogli:', portfoliosError);
-                showLoadError('Errore nel caricamento dei portafogli.');
-                return;
-            }
-
-            const portfolioSelect = document.getElementById('portfolio-select');
-            if (portfolios.length === 0) {
-                portfolioSelect.disabled = true;
-                renderUI([]);
-                showLoadError('Non ci sono portafogli nel database. Creane uno per visualizzare i ticker.');
-                return;
-            }
-
-            portfolios.forEach(portfolio => {
-                const option = document.createElement('option');
-                option.value = portfolio.id;
-                option.textContent = portfolio.name;
-                portfolioSelect.appendChild(option);
-            });
-            portfolioSelect.addEventListener('change', handlePortfolioChange);
-            portfolioSelect.value = portfolios[0].id;
-            await handlePortfolioChange({ target: portfolioSelect });
-        }
-
-        async function fetchPricesForTickers(tickers) {
-            let allPrices = [];
-            let page = 0;
-            const pageSize = 1000;
-            let keepFetching = true;
-
-            while (keepFetching) {
-                const from = page * pageSize;
-                const to = from + pageSize - 1;
-                const { data, error } = await supabaseClient
-                    .from('prices')
-                    .select('*')
-                    .in('ticker', tickers)
-                    .order('ticker', { ascending: true })
-                    .order('date', { ascending: false })
-                    .range(from, to);
-
-                if (error) {
-                    console.error('Errore nel recupero dei prezzi del portafoglio:', error);
-                    return null;
-                }
-
-                allPrices = allPrices.concat(data);
-                keepFetching = data.length === pageSize;
-                page++;
-            }
-
-            return allPrices.map(record => ({
-                ...record,
-                description: descriptionsByTicker.get(record.ticker) || ''
-            }));
-        }
-
-        async function fetchDividendsForTickers(tickers) {
-            let allDividends = [];
-            let page = 0;
-            const pageSize = 1000;
-            let keepFetching = true;
-
-            while (keepFetching) {
-                const from = page * pageSize;
-                const to = from + pageSize - 1;
-                const { data, error } = await supabaseClient
-                    .from('dividends')
-                    .select('date, ticker, amount')
-                    .in('ticker', tickers)
-                    .order('date', { ascending: false })
-                    .order('ticker', { ascending: true })
-                    .range(from, to);
-
-                if (error) {
-                    console.error('Errore nel recupero dei dividendi del portafoglio:', error);
-                    return null;
-                }
-
-                allDividends = allDividends.concat(data);
-                keepFetching = data.length === pageSize;
-                page++;
-            }
-
-            return allDividends;
         }
 
         function showLoadError(message) {
             const status = document.getElementById('load-status');
             status.textContent = message;
-            status.classList.remove('hidden');
+            status.hidden = !message;
         }
 
-        function renderUI(data, quantityByTicker = new Map(), dividends = []) {
-            priceRecords = data;
-            activePortfolioQuantities = quantityByTicker;
-            renderTickerSummary(data, quantityByTicker);
+        function getSeriesRange(chart = chartInstance) {
+            if (!chart) return null;
+            const visible = chart.data.datasets
+                .filter((dataset, index) => chart.isDatasetVisible(index))
+                .flatMap(dataset => dataset.rawData
+                    .map((value, index) => value === null ? -1 : index)
+                    .filter(index => index >= 0));
+            if (visible.length === 0) return null;
+            return { min: Math.min(...visible), max: Math.max(...visible) };
+        }
 
-            if (data.length === 0) {
-                if (chartInstance) {
-                    chartInstance.destroy();
-                    chartInstance = null;
-                }
-                document.querySelectorAll('[data-range], #toggle-chart-mode').forEach(button => {
-                    button.disabled = true;
-                });
-                document.getElementById('chart-variation').replaceChildren();
-                document.getElementById('dividend-tooltip').classList.add('hidden');
-                return;
+        function getRangeForSelection(range) {
+            const visibleRange = getSeriesRange();
+            if (!visibleRange) return null;
+            if (range === 'all') return visibleRange;
+
+            const labels = chartInstance.data.labels;
+            const lastDate = new Date(`${labels[visibleRange.max]}T00:00:00Z`);
+            let startDate;
+            if (range === '1m') {
+                startDate = new Date(lastDate);
+                startDate.setUTCDate(startDate.getUTCDate() - 29);
+            } else if (range === '1y') {
+                startDate = new Date(lastDate);
+                startDate.setUTCDate(startDate.getUTCDate() - 364);
+            } else {
+                startDate = new Date(Date.UTC(lastDate.getUTCFullYear(), 0, 1));
             }
 
-            document.querySelectorAll('[data-range], #toggle-chart-mode').forEach(button => {
-                button.disabled = false;
-            });
-            const recordedDates = [...new Set(data.map(row => row.date))].sort();
-            const firstDateParts = recordedDates[0].split('-').map(Number);
-            const lastDateParts = recordedDates[recordedDates.length - 1].split('-').map(Number);
-            const currentDate = new Date(Date.UTC(
-                firstDateParts[0],
-                firstDateParts[1] - 1,
-                firstDateParts[2]
-            ));
-            const lastDate = Date.UTC(
-                lastDateParts[0],
-                lastDateParts[1] - 1,
-                lastDateParts[2]
+            const startLabel = startDate.toISOString().slice(0, 10);
+            const firstIndex = labels.findIndex((date, index) =>
+                index >= visibleRange.min && index <= visibleRange.max && date >= startLabel
             );
-            const dates = [];
-            while (currentDate.getTime() <= lastDate) {
-                dates.push(currentDate.toISOString().slice(0, 10));
-                currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-            }
-            const tickers = [...new Set(data.map(row => row.ticker))].sort();
-            const pricesByTicker = new Map(
-                tickers.map(ticker => [ticker, new Map()])
+            return {
+                min: firstIndex < 0 ? visibleRange.min : firstIndex,
+                max: visibleRange.max
+            };
+        }
+
+        function setChartRange(range) {
+            if (!chartInstance) return;
+            const visibleRange = getRangeForSelection(range);
+            if (!visibleRange) return;
+            document.getElementById('dividend-tooltip').hidden = true;
+            selectedRange = range;
+            chartInstance.resetZoom();
+            chartInstance.options.scales.x.min = visibleRange.min;
+            chartInstance.options.scales.x.max = visibleRange.max;
+            updatePercentageDatasets();
+            chartInstance.update('none');
+            updateRangeButtons();
+            updateChartCaption();
+        }
+
+        function updateRangeButtons() {
+            document.querySelectorAll('[data-range]').forEach(button => {
+                button.setAttribute('aria-pressed', String(button.dataset.range === selectedRange));
+                button.disabled = !chartInstance;
+            });
+        }
+
+        function updatePercentageDatasets() {
+            if (!chartInstance) return;
+            const start = Math.max(0, Math.floor(chartInstance.scales.x.min ?? 0));
+            const end = Math.min(
+                chartInstance.data.labels.length - 1,
+                Math.ceil(chartInstance.scales.x.max ?? chartInstance.data.labels.length - 1)
             );
-            data.forEach(row => {
-                pricesByTicker.get(row.ticker).set(row.date, Number(row.price));
-            });
-            const datasets = tickers.map((ticker, index) => {
-                const color = getSeriesColor(index);
-                const values = dates.map(date => pricesByTicker.get(ticker).get(date) ?? null);
-                return {
-                    label: ticker,
-                    data: values,
-                    rawData: values,
-                    hidden: index !== 0,
-                    spanGaps: true,
-                    borderColor: color,
-                    backgroundColor: color,
-                    borderWidth: 2,
-                    fill: false,
-                    tension: 0.1,
-                    pointRadius: 0,
-                    pointHitRadius: 12,
-                    pointHoverRadius: 5
-                };
-            });
 
-            renderChart(dates, datasets, dividends);
-        }
-
-        function renderTickerSummary(data, quantityByTicker = new Map()) {
-            const tbody = document.getElementById('ticker-summary-body');
-            tbody.replaceChildren();
-            document.getElementById('load-status').classList.add('hidden');
-
-            if (data.length === 0 && quantityByTicker.size === 0) {
-                const row = document.createElement('tr');
-                const cell = document.createElement('td');
-                cell.colSpan = 5;
-                cell.className = 'py-1 px-6 text-center text-gray-400';
-                cell.textContent = activePortfolioId
-                    ? 'Nessun ticker presente nel portafoglio selezionato.'
-                    : 'Nessun dato presente nel database.';
-                row.appendChild(cell);
-                tbody.appendChild(row);
-                return;
-            }
-
-            const recordsByTicker = new Map();
-            data.forEach(record => {
-                if (!recordsByTicker.has(record.ticker)) {
-                    recordsByTicker.set(record.ticker, []);
-                }
-                recordsByTicker.get(record.ticker).push(record);
-            });
-
-            const summaries = [...recordsByTicker.entries()].map(([ticker, records]) => {
-                records.sort((recordA, recordB) => recordB.date.localeCompare(recordA.date));
-                const latestPrice = Number(records[0].price);
-                const previousPrice = records.length > 1 ? Number(records[1].price) : null;
-                const hasVariation = previousPrice !== null
-                    && Number.isFinite(latestPrice)
-                    && Number.isFinite(previousPrice)
-                    && previousPrice !== 0;
-                const variation = hasVariation
-                    ? ((latestPrice - previousPrice) / previousPrice) * 100
-                    : null;
-                return {
-                    ticker,
-                    description: records[0].description || '',
-                    quantity: quantityByTicker.has(ticker) ? Number(quantityByTicker.get(ticker)) : null,
-                    price: latestPrice,
-                    variation
-                };
-            });
-            quantityByTicker.forEach((quantity, ticker) => {
-                if (!recordsByTicker.has(ticker)) {
-                    summaries.push({
-                        ticker,
-                        description: '',
-                        quantity: Number(quantity),
-                        price: null,
-                        variation: null
-                    });
-                }
-            });
-            const direction = summarySortState.direction === 'asc' ? 1 : -1;
-            summaries.sort((summaryA, summaryB) => {
-                const valueA = summaryA[summarySortState.key];
-                const valueB = summaryB[summarySortState.key];
-                let comparison;
-                if (summarySortState.key === 'price' || summarySortState.key === 'variation'
-                    || summarySortState.key === 'quantity') {
-                    const finiteA = Number.isFinite(valueA);
-                    const finiteB = Number.isFinite(valueB);
-                    comparison = finiteA && finiteB
-                        ? valueA - valueB
-                        : finiteA ? -1 : finiteB ? 1 : 0;
-                } else {
-                    comparison = String(valueA).localeCompare(String(valueB), 'it');
-                }
-                return comparison * direction;
-            });
-
-            summaries.forEach(({ ticker, description, quantity, price, variation }) => {
-                const row = document.createElement('tr');
-                row.className = 'hover:bg-gray-50 transition-colors';
-
-                const tickerCell = document.createElement('td');
-                tickerCell.className = 'py-1 px-6 font-medium text-gray-900';
-                tickerCell.textContent = ticker;
-
-                const descriptionCell = document.createElement('td');
-                descriptionCell.className = 'py-1 px-6 text-gray-500';
-                descriptionCell.textContent = description;
-
-                const quantityCell = document.createElement('td');
-                quantityCell.className = 'py-1 px-6 text-right text-gray-600';
-                quantityCell.textContent = Number.isFinite(quantity)
-                    ? quantity.toLocaleString('it-IT', { maximumFractionDigits: 8 })
-                    : '—';
-
-                const priceCell = document.createElement('td');
-                priceCell.className = 'py-1 px-6 text-right font-semibold text-blue-600';
-                priceCell.textContent = Number.isFinite(price)
-                    ? `${price.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-                    : '—';
-
-                const variationCell = document.createElement('td');
-                variationCell.className = 'py-1 px-6 text-right font-semibold';
-                if (variation === null || !Number.isFinite(variation)) {
-                    variationCell.classList.add('text-gray-400');
-                    variationCell.textContent = '—';
-                } else {
-                    variationCell.classList.add(
-                        variation > 0 ? 'text-green-600' : variation < 0 ? 'text-red-600' : 'text-gray-500'
-                    );
-                    const sign = variation >= 0 ? '+' : '';
-                    variationCell.textContent = `${sign}${variation.toLocaleString('it-IT', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    })}%`;
+            chartInstance.data.datasets.forEach(dataset => {
+                if (!percentageMode) {
+                    dataset.data = dataset.rawData;
+                    return;
                 }
 
-                row.append(tickerCell, descriptionCell, quantityCell, priceCell, variationCell);
-                tbody.appendChild(row);
-            });
-        }
-
-        async function handlePortfolioChange(event) {
-            const portfolioId = event.target.value;
-            const requestId = ++portfolioRequestId;
-            if (!portfolioId) {
-                return;
-            }
-
-            let allPositions = [];
-            let page = 0;
-            const pageSize = 1000;
-            let keepFetching = true;
-            while (keepFetching) {
-                const from = page * pageSize;
-                const to = from + pageSize - 1;
-                const { data, error } = await supabaseClient
-                    .from('portfolio_positions')
-                    .select('ticker, quantity')
-                    .eq('portfolio_id', portfolioId)
-                    .order('ticker', { ascending: true })
-                    .range(from, to);
-
-                if (error) {
-                    if (requestId !== portfolioRequestId) {
-                        return;
+                let basePrice = null;
+                for (let index = start; index <= end; index++) {
+                    if (dataset.rawData[index] !== null) {
+                        basePrice = dataset.rawData[index];
+                        break;
                     }
-                    console.error('Errore nel recupero delle posizioni del portafoglio:', error);
-                    showLoadError('Errore nel caricamento delle posizioni del portafoglio.');
-                    event.target.value = activePortfolioId || portfolioId;
-                    return;
                 }
-
-                if (requestId !== portfolioRequestId) {
-                    return;
-                }
-                allPositions = allPositions.concat(data);
-                keepFetching = data.length === pageSize;
-                page++;
-            }
-
-            const quantityByTicker = new Map(
-                allPositions.map(position => [position.ticker, Number(position.quantity)])
-            );
-            if (quantityByTicker.size === 0) {
-                activePortfolioId = portfolioId;
-                renderUI([], quantityByTicker);
-                return;
-            }
-
-            const tickers = [...quantityByTicker.keys()];
-            const [portfolioPrices, portfolioDividends] = await Promise.all([
-                fetchPricesForTickers(tickers),
-                fetchDividendsForTickers(tickers)
-            ]);
-            if (requestId !== portfolioRequestId) {
-                return;
-            }
-            if (portfolioPrices === null || portfolioDividends === null) {
-                showLoadError('Errore nel caricamento dei prezzi o dei dividendi del portafoglio.');
-                event.target.value = activePortfolioId || portfolioId;
-                return;
-            }
-            activePortfolioId = portfolioId;
-            renderUI(portfolioPrices, quantityByTicker, portfolioDividends);
+                dataset.data = dataset.rawData.map(price =>
+                    price === null || basePrice === null || basePrice === 0
+                        ? null
+                        : ((price - basePrice) / basePrice) * 100
+                );
+            });
         }
 
-        document.querySelectorAll('[data-summary-sort]').forEach(button => {
+        function updateChartCaption() {
+            const visible = [...selectedTickers];
+            document.getElementById('chart-empty').hidden = visible.length > 0;
+
+            const activeSeries = document.getElementById('active-series');
+            activeSeries.replaceChildren();
+            if (!chartInstance) return;
+
+            const firstIndex = Math.max(0, Math.ceil(chartInstance.scales.x.min));
+            const lastIndex = Math.min(
+                chartInstance.data.labels.length - 1,
+                Math.floor(chartInstance.scales.x.max)
+            );
+            visible.forEach(ticker => {
+                const datasetIndex = chartInstance.data.datasets.findIndex(item => item.label === ticker);
+                if (datasetIndex < 0 || !chartInstance.isDatasetVisible(datasetIndex)) return;
+                const dataset = chartInstance.data.datasets[datasetIndex];
+                const chip = document.createElement('span');
+                chip.className = 'series-chip';
+                const dot = document.createElement('span');
+                dot.className = 'series-dot';
+                dot.style.backgroundColor = dataset.borderColor;
+                const label = document.createElement('span');
+                label.textContent = ticker;
+                const prices = dataset.data;
+                let firstPrice = null;
+                let lastPrice = null;
+                let visiblePriceCount = 0;
+                for (let index = firstIndex; index <= lastIndex; index++) {
+                    const price = prices[index];
+                    if (Number.isFinite(price)) {
+                        visiblePriceCount += 1;
+                        if (firstPrice === null) firstPrice = price;
+                        lastPrice = price;
+                    }
+                }
+
+                const variation = document.createElement('span');
+                variation.className = 'series-variation';
+                if (visiblePriceCount < 2 || firstPrice === null || lastPrice === null
+                    || (!percentageMode && firstPrice === 0)) {
+                    variation.textContent = '—';
+                    variation.style.color = 'var(--muted)';
+                } else {
+                    const change = percentageMode
+                        ? lastPrice
+                        : ((lastPrice - firstPrice) / firstPrice) * 100;
+                    const sign = change >= 0 ? '+' : '';
+                    variation.textContent = `${sign}${numberFormat.format(change)}%`;
+                    variation.style.color = change > 0
+                        ? 'var(--positive)'
+                        : change < 0 ? 'var(--negative)' : 'var(--muted)';
+                }
+
+                chip.setAttribute('aria-label', `${ticker}: variazione nel periodo ${variation.textContent}`);
+                chip.append(dot, label, variation);
+                activeSeries.appendChild(chip);
+            });
+        }
+
+        function updateChartTheme() {
+            if (!chartInstance) return;
+            const textColor = isDarkTheme() ? '#cbd5e1' : '#475569';
+            chartInstance.options.plugins.legend.labels.color = textColor;
+            chartInstance.options.scales.x.ticks.color = textColor;
+            chartInstance.options.scales.y.ticks.color = textColor;
+            chartInstance.options.scales.y.grid.color = isDarkTheme()
+                ? 'rgba(100, 116, 139, .2)'
+                : 'rgba(148, 163, 184, .25)';
+            chartInstance.update('none');
+        }
+
+        function getSummaries(records, quantities) {
+            const byTicker = new Map();
+            records.forEach(record => {
+                if (!byTicker.has(record.ticker)) byTicker.set(record.ticker, []);
+                byTicker.get(record.ticker).push(record);
+            });
+
+            return [...quantities.entries()]
+                .map(([ticker, quantity]) => {
+                    const tickerRecords = (byTicker.get(ticker) || [])
+                        .slice()
+                        .sort((a, b) => b.date.localeCompare(a.date));
+                    const latest = tickerRecords[0];
+                    const previous = tickerRecords[1];
+                    const price = latest ? Number(latest.price) : null;
+                    const previousPrice = previous ? Number(previous.price) : null;
+                    const variation = Number.isFinite(price) && Number.isFinite(previousPrice)
+                        && previousPrice !== 0
+                        ? ((price - previousPrice) / previousPrice) * 100
+                        : null;
+
+                    return {
+                        ticker,
+                        description: latest?.description || '',
+                        quantity,
+                        price: Number.isFinite(price) ? price : null,
+                        variation
+                    };
+                })
+                .sort((a, b) => a.ticker.localeCompare(b.ticker, 'it'));
+        }
+
+        function renderAssetList() {
+            const list = document.getElementById('asset-list');
+            list.replaceChildren();
+            const sortedSummaries = [...summaries].sort((a, b) => {
+                const left = a[summarySort.key];
+                const right = b[summarySort.key];
+                if (left === null || right === null) {
+                    if (left === right) return 0;
+                    return left === null ? 1 : -1;
+                }
+                const comparison = summarySort.key === 'ticker'
+                    ? String(left).localeCompare(String(right), 'it')
+                    : left - right;
+                return comparison * (summarySort.direction === 'asc' ? 1 : -1);
+            });
+            sortedSummaries.forEach(summary => {
+                const originalIndex = summaries.findIndex(item => item.ticker === summary.ticker);
+                const color = seriesColors[originalIndex % seriesColors.length];
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'asset-row';
+                button.dataset.ticker = summary.ticker;
+                button.style.setProperty('--asset-color', color);
+                button.disabled = !Number.isFinite(summary.price);
+                button.setAttribute('aria-pressed', String(selectedTickers.has(summary.ticker)));
+                button.setAttribute('aria-label',
+                    `${summary.ticker}, ${summary.description || 'nessuna descrizione'}, ${Number.isFinite(summary.price) ? `${numberFormat.format(summary.price)} euro` : 'nessun prezzo'}, ${selectedTickers.has(summary.ticker) ? 'visibile nel grafico' : 'non visibile nel grafico'}`);
+                if (selectedTickers.has(summary.ticker)) button.classList.add('is-active');
+
+                const main = document.createElement('span');
+                main.className = 'asset-main';
+                const identity = document.createElement('span');
+                identity.className = 'asset-identity';
+                const dot = document.createElement('span');
+                dot.className = 'asset-dot';
+                const text = document.createElement('span');
+                text.className = 'asset-text';
+                const ticker = document.createElement('span');
+                ticker.className = 'asset-ticker';
+                ticker.textContent = summary.ticker;
+                const description = document.createElement('span');
+                description.className = 'asset-description';
+                description.textContent = summary.description || 'Descrizione non disponibile';
+                text.append(ticker, description);
+                identity.append(dot, text);
+
+                const price = document.createElement('span');
+                price.className = 'asset-price';
+                price.textContent = Number.isFinite(summary.price)
+                    ? `${numberFormat.format(summary.price)} €`
+                    : '—';
+                const variation = document.createElement('span');
+                variation.className = 'asset-variation';
+                if (summary.variation === null) {
+                    variation.textContent = '—';
+                } else {
+                    variation.textContent = `${summary.variation > 0 ? '+' : ''}${numberFormat.format(summary.variation)}%`;
+                    if (summary.variation > 0) variation.classList.add('variation-positive');
+                    if (summary.variation < 0) variation.classList.add('variation-negative');
+                }
+                main.append(identity, price);
+
+                const metrics = document.createElement('span');
+                metrics.className = 'asset-metrics';
+                const quantity = document.createElement('span');
+                quantity.textContent = `Quantità ${new Intl.NumberFormat('it-IT', { maximumFractionDigits: 8 }).format(summary.quantity)}`;
+                metrics.append(quantity);
+                button.append(main, variation, metrics);
+                button.addEventListener('click', () => toggleTicker(summary.ticker));
+                list.appendChild(button);
+            });
+        }
+
+        document.querySelectorAll('[data-sort]').forEach(button => {
             button.addEventListener('click', () => {
-                const key = button.dataset.summarySort;
-                const direction = summarySortState.key === key
-                    && summarySortState.direction === 'asc'
-                    ? 'desc'
-                    : 'asc';
-                summarySortState = { key, direction };
-                document.querySelectorAll('[data-summary-sort]').forEach(sortButton => {
-                    const header = sortButton.closest('th');
-                    header.setAttribute('aria-sort', sortButton.dataset.summarySort === key
-                        ? (direction === 'asc' ? 'ascending' : 'descending')
-                        : 'none');
+                const key = button.dataset.sort;
+                summarySort = {
+                    key,
+                    direction: summarySort.key === key && summarySort.direction === 'asc' ? 'desc' : 'asc'
+                };
+                document.querySelectorAll('[data-sort]').forEach(sortButton => {
+                    const active = sortButton.dataset.sort === key;
+                    const direction = active ? summarySort.direction : null;
+                    sortButton.setAttribute('aria-sort',
+                        direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none');
+                    sortButton.querySelector('.sort-indicator').textContent =
+                        direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '';
                 });
-                renderTickerSummary(priceRecords, activePortfolioQuantities);
+                renderAssetList();
             });
         });
 
-        function renderChart(labels, datasets, dividends) {
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            const chartModeButton = document.getElementById('toggle-chart-mode');
+        function toggleTicker(ticker) {
+            if (!chartInstance) return;
+            document.getElementById('dividend-tooltip').hidden = true;
+            const datasetIndex = chartInstance.data.datasets.findIndex(dataset => dataset.label === ticker);
+            if (datasetIndex < 0) return;
+
+            if (selectedTickers.has(ticker)) {
+                selectedTickers.delete(ticker);
+                chartInstance.setDatasetVisibility(datasetIndex, false);
+            } else {
+                selectedTickers.add(ticker);
+                chartInstance.setDatasetVisibility(datasetIndex, true);
+            }
+
+            renderAssetList();
+            if (selectedRange === 'all') {
+                const range = getSeriesRange();
+                if (range) {
+                    chartInstance.options.scales.x.min = range.min;
+                    chartInstance.options.scales.x.max = range.max;
+                }
+            }
+            updatePercentageDatasets();
+            chartInstance.update('none');
+            updateChartCaption();
+        }
+
+        function renderChart(records, dividends = []) {
+            if (chartInstance) {
+                chartInstance.destroy();
+                chartInstance = null;
+            }
             const dividendTooltip = document.getElementById('dividend-tooltip');
-            const container = document.getElementById('chart-canvas-container');
+            dividendTooltip.hidden = true;
+            dividendTooltip.replaceChildren();
+
+            const chartTickers = [...new Set(records.map(record => record.ticker))].sort((a, b) => a.localeCompare(b, 'it'));
+            if (chartTickers.length === 0) {
+                selectedTickers = new Set();
+                renderAssetList();
+                document.getElementById('chart-empty').hidden = false;
+                document.querySelectorAll('[data-range], .mode-button').forEach(button => { button.disabled = true; });
+                updateChartCaption();
+                return;
+            }
+
+            const recordedDates = [...new Set(records.map(record => record.date))].sort();
+            const dates = [];
+            const currentDate = new Date(`${recordedDates[0]}T00:00:00Z`);
+            const lastDate = new Date(`${recordedDates[recordedDates.length - 1]}T00:00:00Z`);
+            while (currentDate <= lastDate) {
+                dates.push(currentDate.toISOString().slice(0, 10));
+                currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+            }
+            const pricesByTicker = new Map(chartTickers.map(ticker => [ticker, new Map()]));
+            records.forEach(record => pricesByTicker.get(record.ticker).set(record.date, Number(record.price)));
+
+            const datasets = chartTickers.map((ticker, index) => {
+                const data = dates.map(date => pricesByTicker.get(ticker).get(date) ?? null);
+                const summaryIndex = summaries.findIndex(summary => summary.ticker === ticker);
+                const color = seriesColors[(summaryIndex < 0 ? index : summaryIndex) % seriesColors.length];
+                return {
+                    label: ticker,
+                    data,
+                    rawData: data,
+                    hidden: !selectedTickers.has(ticker),
+                    spanGaps: true,
+                    borderColor: color,
+                    backgroundColor: color,
+                    borderWidth: 1.25,
+                    pointRadius: 0,
+                    pointHitRadius: 10,
+                    pointHoverRadius: 4,
+                    tension: .18
+                };
+            });
+
             const datasetIndexesByTicker = new Map(
                 datasets.map((dataset, index) => [dataset.label, index])
             );
@@ -703,24 +1008,22 @@
                 .map(dividend => ({
                     ...dividend,
                     amount: Number(dividend.amount),
-                    dateIndex: labels.indexOf(dividend.date)
+                    dateIndex: dates.indexOf(dividend.date)
                 }))
                 .filter(dividend => dividend.dateIndex >= 0);
             const markerRadius = 7;
             let hoveredDividend = null;
             const hideDividendTooltip = () => {
-                if (!dividendTooltip.classList.contains('hidden')) {
-                    dividendTooltip.classList.add('hidden');
-                    hoveredDividend = null;
-                    return true;
-                }
-                return false;
+                if (dividendTooltip.hidden) return false;
+                dividendTooltip.hidden = true;
+                hoveredDividend = null;
+                return true;
             };
             const dividendMarkerPlugin = {
                 id: 'dividendMarkers',
                 afterDatasetsDraw: chart => {
-                    const { ctx: chartContext, chartArea, scales } = chart;
-                    chartContext.save();
+                    const { ctx, chartArea, scales } = chart;
+                    ctx.save();
                     dividendEvents.forEach(dividend => {
                         const datasetIndex = datasetIndexesByTicker.get(dividend.ticker);
                         if (datasetIndex === undefined || !chart.isDatasetVisible(datasetIndex)
@@ -730,29 +1033,24 @@
                         }
 
                         const x = scales.x.getPixelForValue(dividend.dateIndex);
-                        if (x < chartArea.left || x > chartArea.right) {
-                            return;
-                        }
+                        if (x < chartArea.left || x > chartArea.right) return;
                         const y = chartArea.bottom - markerRadius - 2;
-                        const color = chart.data.datasets[datasetIndex].borderColor;
-                        chartContext.beginPath();
-                        chartContext.arc(x, y, markerRadius, 0, Math.PI * 2);
-                        chartContext.fillStyle = color;
-                        chartContext.fill();
-                        chartContext.fillStyle = '#ffffff';
-                        chartContext.font = 'bold 9px sans-serif';
-                        chartContext.textAlign = 'center';
-                        chartContext.textBaseline = 'middle';
-                        chartContext.fillText('D', x, y);
+                        ctx.beginPath();
+                        ctx.arc(x, y, markerRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = chart.data.datasets[datasetIndex].borderColor;
+                        ctx.fill();
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 9px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('D', x, y);
                     });
-                    chartContext.restore();
+                    ctx.restore();
                 },
                 afterEvent: (chart, args) => {
                     const { event } = args;
                     if (event.type === 'mouseout') {
-                        if (hideDividendTooltip()) {
-                            args.changed = true;
-                        }
+                        if (hideDividendTooltip()) args.changed = true;
                         return;
                     }
 
@@ -774,519 +1072,403 @@
                     }
 
                     if (!match) {
-                        if (hideDividendTooltip()) {
-                            args.changed = true;
-                        }
+                        if (hideDividendTooltip()) args.changed = true;
                         return;
                     }
-
-                    if (hoveredDividend === match) {
-                        return;
-                    }
+                    if (hoveredDividend === match) return;
 
                     hoveredDividend = match;
                     const dateLine = document.createElement('span');
-                    dateLine.className = 'block';
+                    dateLine.className = 'dividend-tooltip-date';
                     dateLine.textContent = match.date;
+                    const valueLine = document.createElement('div');
+                    valueLine.className = 'dividend-tooltip-value';
+                    const colorDot = document.createElement('span');
+                    colorDot.className = 'dividend-tooltip-dot';
+                    colorDot.style.backgroundColor =
+                        chart.data.datasets[datasetIndexesByTicker.get(match.ticker)].borderColor;
                     const amountLine = document.createElement('span');
-                    amountLine.className = 'block';
-                    amountLine.textContent = `${match.ticker}: ${
-                        match.amount.toLocaleString('it-IT', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                        })
-                    } €`;
-                    dividendTooltip.replaceChildren(dateLine, amountLine);
-                    dividendTooltip.classList.remove('hidden');
+                    amountLine.textContent = `${match.ticker}: ${numberFormat.format(match.amount)} €`;
+                    valueLine.append(colorDot, amountLine);
+                    dividendTooltip.replaceChildren(dateLine, valueLine);
+                    dividendTooltip.hidden = false;
+
+                    const container = chart.canvas.parentElement;
+                    const canvasRect = chart.canvas.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+                    const scaleX = canvasRect.width / chart.width;
+                    const scaleY = canvasRect.height / chart.height;
+                    const pointerX = canvasRect.left - containerRect.left - container.clientLeft
+                        + event.x * scaleX;
+                    const pointerY = canvasRect.top - containerRect.top - container.clientTop
+                        + event.y * scaleY;
                     const left = Math.min(
-                        event.x + 10,
+                        pointerX + 10,
                         container.clientWidth - dividendTooltip.offsetWidth - 8
                     );
                     dividendTooltip.style.left = `${Math.max(8, left)}px`;
                     dividendTooltip.style.top = `${
-                        Math.max(0, event.y - dividendTooltip.offsetHeight - 8)
+                        Math.max(0, pointerY - dividendTooltip.offsetHeight - 8)
                     }px`;
                     args.changed = true;
                 }
             };
-            const getVisibleDataRange = (chartDatasets, isVisible = dataset => !dataset.hidden) => {
-                let firstIndex = Infinity;
-                let lastIndex = -Infinity;
 
-                chartDatasets.forEach((dataset, datasetIndex) => {
-                    if (!isVisible(dataset, datasetIndex)) {
-                        return;
-                    }
-                    dataset.data.forEach((price, index) => {
-                        if (Number.isFinite(price)) {
-                            firstIndex = Math.min(firstIndex, index);
-                            lastIndex = Math.max(lastIndex, index);
-                        }
-                    });
-                });
-
-                return firstIndex === Infinity ? null : { min: firstIndex, max: lastIndex };
-            };
-            
-            if (chartInstance) {
-                chartInstance.destroy();
-            }
-            hideDividendTooltip();
-
-            const getInterpolatedValue = (values, position) => {
-                let previousIndex = -1;
-                let nextIndex = -1;
-                for (let index = Math.min(Math.floor(position), values.length - 1); index >= 0; index--) {
-                    if (Number.isFinite(values[index])) {
-                        previousIndex = index;
-                        break;
-                    }
-                }
-                for (let index = Math.max(0, Math.ceil(position)); index < values.length; index++) {
-                    if (Number.isFinite(values[index])) {
-                        nextIndex = index;
-                        break;
-                    }
-                }
-
-                if (previousIndex >= 0 && previousIndex === nextIndex) {
-                    return values[previousIndex];
-                }
-                if (previousIndex >= 0 && nextIndex >= 0) {
-                    const progress = (position - previousIndex) / (nextIndex - previousIndex);
-                    return values[previousIndex]
-                        + (values[nextIndex] - values[previousIndex]) * progress;
-                }
-                if (nextIndex >= 0) {
-                    return values[nextIndex];
-                }
-                return previousIndex >= 0 ? values[previousIndex] : null;
-            };
-
-            const updatePercentageDatasets = chart => {
-                if (!percentageMode) {
-                    chart.data.datasets.forEach(dataset => {
-                        dataset.data = dataset.rawData;
-                    });
-                    return;
-                }
-
-                const visibleStart = Math.max(0, chart.scales.x.min);
-                chart.data.datasets.forEach(dataset => {
-                    const baseline = getInterpolatedValue(dataset.rawData, visibleStart);
-                    dataset.data = dataset.rawData.map(value =>
-                        Number.isFinite(value) && baseline !== null && baseline !== 0
-                            ? ((value - baseline) / baseline) * 100
-                            : null
-                    );
-                });
-            };
-
-            updateVisibleVariations = chart => {
-                const variationContainer = document.getElementById('chart-variation');
-                const firstIndex = Math.max(0, Math.ceil(chart.scales.x.min));
-                const lastIndex = Math.min(chart.data.labels.length - 1, Math.floor(chart.scales.x.max));
-                variationContainer.replaceChildren();
-
-                chart.data.datasets.forEach((dataset, datasetIndex) => {
-                    if (!chart.isDatasetVisible(datasetIndex)) {
-                        return;
-                    }
-
-                    let firstPrice = null;
-                    let lastPrice = null;
-                    let visiblePriceCount = 0;
-                    for (let index = firstIndex; index <= lastIndex; index++) {
-                        const price = dataset.data[index];
-                        if (Number.isFinite(price)) {
-                            visiblePriceCount++;
-                            if (firstPrice === null) {
-                                firstPrice = price;
-                            }
-                            lastPrice = price;
-                        }
-                    }
-
-                    const item = document.createElement('span');
-                    item.className = 'font-semibold';
-                    if (visiblePriceCount < 2 || firstPrice === null || lastPrice === null
-                        || (!percentageMode && firstPrice === 0)) {
-                        item.classList.add('text-gray-400');
-                        item.textContent = `${dataset.label}: —`;
-                    } else {
-                        const variation = percentageMode
-                            ? getInterpolatedValue(dataset.data, chart.scales.x.max) ?? lastPrice
-                            : ((lastPrice - firstPrice) / firstPrice) * 100;
-                        item.classList.add(
-                            variation > 0 ? 'text-green-600' : variation < 0 ? 'text-red-600' : 'text-gray-500'
-                        );
-                        const sign = variation >= 0 ? '+' : '';
-                        item.textContent = `${dataset.label}: ${sign}${variation.toLocaleString('it-IT', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                        })}%`;
-                    }
-                    variationContainer.appendChild(item);
-                });
-            };
-
-            const updateRangeButtons = activeRange => {
-                document.querySelectorAll('[data-range]').forEach(button => {
-                    const isActive = button.dataset.range === activeRange;
-                    button.setAttribute('aria-pressed', String(isActive));
-                    button.classList.toggle('bg-blue-100', isActive);
-                    button.classList.toggle('text-blue-700', isActive);
-                    button.classList.toggle('bg-gray-100', !isActive);
-                    button.classList.toggle('text-gray-600', !isActive);
-                });
-            };
-
-            let tickCacheKey = '';
-            let xAxisTickLabels = new Map();
-            const monthFormatter = new Intl.DateTimeFormat('it-IT', { month: 'short' });
-            const getXAxisTickLabels = scale => {
-                const cacheKey = `${scale.min}:${scale.max}:${scale.width}`;
-                if (cacheKey === tickCacheKey) {
-                    return xAxisTickLabels;
-                }
-
-                tickCacheKey = cacheKey;
-                xAxisTickLabels = new Map();
-                const firstVisibleIndex = Math.max(0, Math.ceil(scale.min));
-                const lastVisibleIndex = Math.min(labels.length - 1, Math.floor(scale.max));
-                if (firstVisibleIndex > lastVisibleIndex) {
-                    return xAxisTickLabels;
-                }
-
-                const visibleDays = scale.max - scale.min;
-                const startParts = labels[firstVisibleIndex].split('-').map(Number);
-                const endParts = labels[lastVisibleIndex].split('-').map(Number);
-                const visibleMonths = (endParts[0] - startParts[0]) * 12
-                    + endParts[1] - startParts[1] + 1;
-                const isWideView = visibleDays > 120;
-                const maxMonthLabels = Math.max(2, Math.floor(scale.width / 55));
-                const monthInterval = Math.ceil(visibleMonths / maxMonthLabels);
-                const monthCandidates = [];
-
-                for (let index = firstVisibleIndex; index <= lastVisibleIndex; index++) {
-                    const [year, month, day] = labels[index].split('-').map(Number);
-                    const previousDate = index > 0
-                        ? labels[index - 1].split('-').map(Number)
-                        : null;
-                    const isMonthStart = day === 1 || !previousDate
-                        || previousDate[0] !== year
-                        || previousDate[1] !== month;
-                    if (isMonthStart) {
-                        const monthIndex = (year - startParts[0]) * 12 + month - startParts[1];
-                        if (month === 1 || !isWideView || monthIndex % monthInterval === 0) {
-                            const text = month === 1
-                                ? String(year)
-                                : monthFormatter.format(new Date(year, month - 1, day));
-                            monthCandidates.push({
-                                index,
-                                text,
-                                priority: month === 1 ? 3 : 2,
-                                x: scale.getPixelForValue(index),
-                                width: text.length * 7 + 8
-                            });
-                        }
-                    }
-                }
-
-                const accepted = [];
-                monthCandidates.sort((a, b) => b.priority - a.priority || a.x - b.x)
-                    .forEach(candidate => {
-                        const hasCollision = accepted.some(label =>
-                            Math.abs(candidate.x - label.x) < (candidate.width + label.width) / 2 + 4
-                        );
-                        if (!hasCollision) {
-                            accepted.push(candidate);
-                            xAxisTickLabels.set(candidate.index, candidate.text);
-                        }
-                    });
-
-                if (!isWideView) {
-                    const dayCandidates = [];
-                    for (let index = firstVisibleIndex; index <= lastVisibleIndex; index++) {
-                        const [year, month, day] = labels[index].split('-').map(Number);
-                        const previousDate = index > 0
-                            ? labels[index - 1].split('-').map(Number)
-                            : null;
-                        const isMonthStart = day === 1 || !previousDate
-                            || previousDate[0] !== year
-                            || previousDate[1] !== month;
-                        if (!isMonthStart) {
-                            dayCandidates.push({
-                                index,
-                                text: String(day),
-                                x: scale.getPixelForValue(index),
-                                width: String(day).length * 7 + 8
-                            });
-                        }
-                    }
-
-                    const anchors = [
-                        { x: scale.left, width: 0, edge: true },
-                        ...accepted.sort((a, b) => a.x - b.x),
-                        { x: scale.right, width: 0, edge: true }
-                    ];
-                    const targetSpacing = 55;
-
-                    for (let anchorIndex = 0; anchorIndex < anchors.length - 1; anchorIndex++) {
-                        const leftAnchor = anchors[anchorIndex];
-                        const rightAnchor = anchors[anchorIndex + 1];
-                        const segmentStart = leftAnchor.edge
-                            ? leftAnchor.x + 10
-                            : leftAnchor.x + leftAnchor.width / 2 + 6;
-                        const segmentEnd = rightAnchor.edge
-                            ? rightAnchor.x - 10
-                            : rightAnchor.x - rightAnchor.width / 2 - 6;
-                        const segmentWidth = segmentEnd - segmentStart;
-                        const slotCount = Math.max(
-                            0,
-                            Math.round((rightAnchor.x - leftAnchor.x) / targetSpacing) - 1
-                        );
-
-                        for (let slot = 1; slot <= slotCount; slot++) {
-                            const targetX = segmentStart + segmentWidth * slot / (slotCount + 1);
-                            const nearbyCandidates = dayCandidates
-                                .filter(candidate => Math.abs(candidate.x - targetX) <= targetSpacing)
-                                .sort((a, b) => Math.abs(a.x - targetX) - Math.abs(b.x - targetX));
-                            const candidate = nearbyCandidates.find(day =>
-                                !accepted.some(label =>
-                                    Math.abs(day.x - label.x) < (day.width + label.width) / 2 + 4
-                                )
-                            );
-
-                            if (candidate) {
-                                accepted.push(candidate);
-                                xAxisTickLabels.set(candidate.index, candidate.text);
-                            }
-                        }
-                    }
-                }
-
-                return xAxisTickLabels;
-            };
-
-            chartInstance = new Chart(ctx, {
+            const textColor = isDarkTheme() ? '#cbd5e1' : '#475569';
+            chartInstance = new Chart(document.getElementById('price-chart'), {
                 type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: datasets
-                },
+                data: { labels: dates, datasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    animation: false,
+                    interaction: { mode: 'nearest', intersect: false, axis: 'x' },
                     plugins: {
-                        legend: {
-                            display: true,
-                            labels: {
-                                color: isDarkTheme() ? '#d1d5db' : '#666',
-                                usePointStyle: true,
-                                pointStyle: 'rect',
-                                boxWidth: 8,
-                                boxHeight: 8
-                            },
-                            onClick: (event, legendItem, legend) => {
-                                const chart = legend.chart;
-                                const datasetIndex = legendItem.datasetIndex;
-                                chart.setDatasetVisibility(
-                                    datasetIndex,
-                                    !chart.isDatasetVisible(datasetIndex)
-                                );
-                                chart.update('none');
-                                const isAllRangeSelected = document
-                                    .querySelector('[data-range="all"]')
-                                    .getAttribute('aria-pressed') === 'true';
-                                if (isAllRangeSelected) {
-                                    const visibleRange = getVisibleDataRange(
-                                        chart.data.datasets,
-                                        (_, index) => chart.isDatasetVisible(index)
-                                    );
-                                    if (visibleRange) {
-                                        chart.zoomScale('x', visibleRange);
-                                        updateRangeButtons('all');
-                                    }
-                                    updateVisibleVariations(chart);
-                                } else {
-                                    updateVisibleVariations(chart);
-                                }
-                            }
-                        },
+                        legend: { display: false },
                         tooltip: {
+                            backgroundColor: isDarkTheme() ? '#0b1220' : '#fff',
+                            titleColor: textColor,
+                            bodyColor: textColor,
+                            titleFont: { family: '"SFMono-Regular", Consolas, monospace', size: 9 },
+                            bodyFont: { family: '"SFMono-Regular", Consolas, monospace', size: 9 },
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            boxWidth: 6,
+                            boxHeight: 7,
+                            boxPadding: 8,
+                            borderColor: isDarkTheme() ? '#334155' : '#e2e8f0',
+                            borderWidth: 1,
                             callbacks: {
                                 label: context => {
-                                    const value = context.parsed.y.toLocaleString('it-IT', {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2
-                                    });
-                                    return `${context.dataset.label}: ${value}${percentageMode ? '%' : ' €'}`;
+                                    const dataPoints = context.chart.tooltip?.dataPoints;
+                                    const tooltipItems = dataPoints?.length ? dataPoints : [context];
+                                    const labels = tooltipItems.map(item => String(item.dataset.label));
+                                    const values = tooltipItems.map(item =>
+                                        `${numberFormat.format(item.parsed.y)}${percentageMode ? '%' : ' €'}`);
+                                    const labelWidth = Math.max(...labels.map(label => label.length));
+                                    const valueWidth = Math.max(...values.map(value => value.length));
+                                    const itemIndex = tooltipItems.findIndex(item =>
+                                        item.datasetIndex === context.datasetIndex);
+                                    const label = labels[itemIndex < 0 ? 0 : itemIndex];
+                                    const value = values[itemIndex < 0 ? 0 : itemIndex];
+
+                                    return `${label.padEnd(labelWidth)}: ${value.padStart(valueWidth)}`;
                                 }
                             }
                         },
                         zoom: {
                             pan: {
                                 enabled: true,
-                                mode: 'x', // Permette lo spostamento sull'asse orizzontale
-                                modifierKey: null, // Permette il pan diretto con il tasto sinistro senza tenere premuto nessun tasto della tastiera
+                                mode: 'x',
+                                modifierKey: null,
                                 onPan: ({ chart }) => {
-                                    updatePercentageDatasets(chart);
+                                    selectedRange = null;
+                                    updatePercentageDatasets();
                                     chart.update('none');
-                                    updateVisibleVariations(chart);
-                                    updateRangeButtons(null);
+                                    updateChartCaption();
+                                    updateRangeButtons();
                                 }
                             },
                             zoom: {
-                                wheel: {
-                                    enabled: true // Zoom con la rotellina del mouse
-                                },
-                                pinch: {
-                                    enabled: true // Zoom con due dita su smartphone
-                                },
-                                mode: 'x', // Zoom solo sull'asse delle date (orizzontale)
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                mode: 'x',
                                 onZoom: ({ chart }) => {
-                                    updatePercentageDatasets(chart);
+                                    selectedRange = null;
+                                    updatePercentageDatasets();
                                     chart.update('none');
-                                    updateVisibleVariations(chart);
-                                    updateRangeButtons(null);
+                                    updateChartCaption();
+                                    updateRangeButtons();
                                 }
                             }
                         }
                     },
                     scales: {
-                        y: {
-                            grid: { color: isDarkTheme() ? '#374151' : '#f3f4f6' },
+                        x: {
+                            type: 'category',
+                            grid: { display: false },
                             ticks: {
-                                color: isDarkTheme() ? '#d1d5db' : '#666',
-                                callback: percentageMode
-                                    ? value => `${Number(value).toLocaleString('it-IT', {
-                                        maximumFractionDigits: 2
-                                    })}%`
-                                    : undefined
+                                color: textColor,
+                                font: { family: '"SFMono-Regular", Consolas, monospace', size: 9 },
+                                maxTicksLimit: 8,
+                                maxRotation: 0,
+                                callback(value) {
+                                    const label = this.getLabelForValue(value);
+                                    return label ? new Intl.DateTimeFormat('it-IT', {
+                                        month: 'short',
+                                        year: '2-digit',
+                                        timeZone: 'UTC'
+                                    }).format(new Date(`${label}T00:00:00Z`)) : '';
+                                }
                             }
                         },
-                        x: {
-                            ...getVisibleDataRange(datasets),
-                            grid: {
-                                display: false,
-                                drawTicks: false
-                            },
+                        y: {
+                            grid: { color: isDarkTheme() ? 'rgba(100, 116, 139, .2)' : 'rgba(148, 163, 184, .25)' },
                             ticks: {
-                                color: isDarkTheme() ? '#d1d5db' : '#666',
-                                autoSkip: false,
-                                maxRotation: 0,
-                                minRotation: 0,
-                                callback: function(value) {
-                                    const index = Math.round(Number(value));
-                                    return getXAxisTickLabels(this).get(index) ?? '';
-                                }
+                                color: textColor,
+                                font: { family: '"SFMono-Regular", Consolas, monospace', size: 9 },
+                                callback: value => percentageMode
+                                    ? `${Number(value).toLocaleString('it-IT', { maximumFractionDigits: 1 })}%`
+                                    : `${Number(value).toLocaleString('it-IT', { maximumFractionDigits: 2 })} €`
                             }
                         }
                     }
                 },
                 plugins: [dividendMarkerPlugin]
             });
-            chartInstance.data.datasets.forEach(dataset => {
-                dataset.tension = percentageMode ? 0 : 0.1;
-            });
-            updateRangeButtons('all');
-            chartModeButton.textContent = percentageMode ? 'Valori assoluti' : 'Percentuale';
-            chartModeButton.setAttribute('aria-pressed', String(percentageMode));
-            updateVisibleVariations(chartInstance);
 
-            chartModeButton.onclick = () => {
-                percentageMode = !percentageMode;
-                chartInstance.data.datasets.forEach(dataset => {
-                    dataset.tension = percentageMode ? 0 : 0.1;
-                });
-                updatePercentageDatasets(chartInstance);
-                chartInstance.options.scales.y.ticks.callback = percentageMode
-                    ? value => `${Number(value).toLocaleString('it-IT', {
-                        maximumFractionDigits: 2
-                    })}%`
-                    : undefined;
-                chartModeButton.textContent = percentageMode ? 'Valori assoluti' : 'Percentuale';
-                chartModeButton.setAttribute('aria-pressed', String(percentageMode));
-                chartInstance.update('none');
-                updateVisibleVariations(chartInstance);
-            };
-
-            document.querySelectorAll('[data-range]').forEach(button => {
-                button.addEventListener('click', () => {
-                    const range = button.dataset.range;
-                    const lastIndex = labels.length - 1;
-                    let startIndex;
-
-                    if (range === '1m') {
-                        startIndex = Math.max(0, lastIndex - 29);
-                    } else if (range === '1y') {
-                        startIndex = Math.max(0, lastIndex - 364);
-                    } else if (range === 'ytd') {
-                        const lastDate = labels[lastIndex];
-                        const yearStart = `${lastDate.slice(0, 4)}-01-01`;
-                        const previousYearRecords = priceRecords
-                            .filter(record => record.date < yearStart)
-                            .sort((recordA, recordB) => recordB.date.localeCompare(recordA.date));
-                        const ytdStartDate = previousYearRecords.length > 0
-                            ? previousYearRecords[0].date
-                            : yearStart;
-                        startIndex = Math.max(0, labels.indexOf(ytdStartDate));
-                    } else {
-                        const visibleRange = getVisibleDataRange(
-                            chartInstance.data.datasets,
-                            (_, datasetIndex) => chartInstance.isDatasetVisible(datasetIndex)
-                        );
-                        if (!visibleRange) {
-                            return;
-                        }
-                        startIndex = visibleRange.min;
-                        chartInstance.zoomScale('x', visibleRange);
-                        updatePercentageDatasets(chartInstance);
-                        chartInstance.update('none');
-                        updateRangeButtons(range);
-                        updateVisibleVariations(chartInstance);
-                        return;
-                    }
-
-                    chartInstance.zoomScale('x', { min: startIndex, max: lastIndex });
-                    updatePercentageDatasets(chartInstance);
-                    chartInstance.update('none');
-                    updateRangeButtons(range);
-                    updateVisibleVariations(chartInstance);
-                });
-            });
+            renderAssetList();
+            const visibleRange = getSeriesRange();
+            if (visibleRange) {
+                chartInstance.options.scales.x.min = visibleRange.min;
+                chartInstance.options.scales.x.max = visibleRange.max;
+            }
+            updateRangeButtons();
+            setChartRange('all');
+            document.querySelectorAll('.mode-button').forEach(button => { button.disabled = false; });
         }
 
-        const chartSection = document.getElementById('chart-section');
-        const fullscreenButton = document.getElementById('toggle-fullscreen');
-        const fullscreenStatus = document.getElementById('fullscreen-status');
+        async function fetchPagedPrices(tickers) {
+            const allPrices = [];
+            const pageSize = 1000;
+            let page = 0;
 
+            while (true) {
+                const from = page * pageSize;
+                const { data, error } = await supabaseClient
+                    .from('prices')
+                    .select('date, ticker, price')
+                    .in('ticker', tickers)
+                    .order('ticker', { ascending: true })
+                    .order('date', { ascending: false })
+                    .range(from, from + pageSize - 1);
+                if (error) {
+                    console.error('Errore nel recupero dei prezzi del portafoglio:', error);
+                    return null;
+                }
+                allPrices.push(...data);
+                if (data.length < pageSize) return allPrices;
+                page += 1;
+            }
+        }
+
+        async function fetchPagedDividends(tickers) {
+            const allDividends = [];
+            const pageSize = 1000;
+            let page = 0;
+
+            while (true) {
+                const from = page * pageSize;
+                const { data, error } = await supabaseClient
+                    .from('dividends')
+                    .select('date, ticker, amount')
+                    .in('ticker', tickers)
+                    .order('date', { ascending: false })
+                    .order('ticker', { ascending: true })
+                    .range(from, from + pageSize - 1);
+
+                if (error) {
+                    console.error('Errore nel recupero dei dividendi del portafoglio:', error);
+                    return null;
+                }
+
+                allDividends.push(...data);
+                if (data.length < pageSize) return allDividends;
+                page += 1;
+            }
+        }
+
+        async function handlePortfolioChange(portfolioId) {
+            if (!portfolioId) return;
+            const requestId = ++portfolioRequestId;
+            showLoadError('');
+            document.getElementById('asset-list').replaceChildren();
+            document.getElementById('asset-list').textContent = 'Caricamento dei dati…';
+
+            const allPositions = [];
+            const pageSize = 1000;
+            let page = 0;
+            while (true) {
+                const from = page * pageSize;
+                const { data, error } = await supabaseClient
+                    .from('portfolio_positions')
+                    .select('ticker, quantity')
+                    .eq('portfolio_id', portfolioId)
+                    .order('ticker', { ascending: true })
+                    .range(from, from + pageSize - 1);
+
+                if (error) {
+                    if (requestId !== portfolioRequestId) return;
+                    console.error('Errore nel recupero delle posizioni del portafoglio:', error);
+                    showLoadError('Errore nel caricamento delle posizioni del portafoglio.');
+                    document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
+                    return;
+                }
+                if (requestId !== portfolioRequestId) return;
+                allPositions.push(...data);
+                if (data.length < pageSize) break;
+                page += 1;
+            }
+
+            const quantities = new Map(allPositions.map(position =>
+                [position.ticker, Number(position.quantity)]
+            ));
+
+            if (quantities.size === 0) {
+                activePortfolioId = portfolioId;
+                summaries = [];
+                selectedTickers = new Set();
+                renderChart([]);
+                document.getElementById('asset-list').textContent = 'Nessuna posizione in questo portafoglio.';
+                return;
+            }
+
+            const prices = await fetchPagedPrices([...quantities.keys()]);
+            if (requestId !== portfolioRequestId) return;
+            if (prices === null) {
+                showLoadError('Errore nel caricamento dei prezzi del portafoglio.');
+                document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
+                return;
+            }
+
+            const dividends = await fetchPagedDividends([...quantities.keys()]);
+            if (requestId !== portfolioRequestId) return;
+            if (dividends === null) {
+                showLoadError('Errore nel caricamento dei dividendi del portafoglio.');
+                document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
+                return;
+            }
+
+            const { data: instruments, error: instrumentsError } = await supabaseClient
+                .from('instruments')
+                .select('ticker, description')
+                .in('ticker', [...quantities.keys()]);
+            if (requestId !== portfolioRequestId) return;
+            if (instrumentsError) {
+                console.error('Errore nel recupero delle descrizioni:', instrumentsError);
+                showLoadError('Errore nel caricamento delle descrizioni dei titoli.');
+                document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
+                return;
+            }
+
+            const descriptions = new Map(instruments.map(instrument =>
+                [instrument.ticker, instrument.description || '']
+            ));
+            activePortfolioId = portfolioId;
+            const records = prices.map(record => ({
+                ...record,
+                price: Number(record.price),
+                description: descriptions.get(record.ticker) || ''
+            }));
+            summaries = getSummaries(records, quantities);
+            selectedTickers = new Set();
+            const firstTickerWithPrices = summaries.find(summary => Number.isFinite(summary.price));
+            if (firstTickerWithPrices) selectedTickers.add(firstTickerWithPrices.ticker);
+            renderChart(records, dividends);
+        }
+
+        async function fetchInitialData() {
+            const { data: portfolios, error } = await supabaseClient
+                .from('portfolios')
+                .select('id, name')
+                .order('name', { ascending: true });
+
+            if (error) {
+                console.error('Errore nel recupero dei portafogli:', error);
+                showLoadError('Errore nel caricamento dei portafogli.');
+                document.getElementById('asset-list').textContent = 'Impossibile caricare i portafogli.';
+                return;
+            }
+
+            const select = document.getElementById('portfolio-select');
+            select.replaceChildren();
+            if (portfolios.length === 0) {
+                select.disabled = true;
+                showLoadError('Non ci sono portafogli nel database. Creane uno per visualizzare i titoli.');
+                document.getElementById('asset-list').textContent = 'Nessun portafoglio disponibile.';
+                return;
+            }
+
+            portfolios.forEach(portfolio => {
+                const option = document.createElement('option');
+                option.value = String(portfolio.id);
+                option.textContent = portfolio.name;
+                select.appendChild(option);
+            });
+            select.disabled = false;
+            select.addEventListener('change', event => handlePortfolioChange(event.target.value));
+            select.value = String(portfolios[0].id);
+            await handlePortfolioChange(select.value);
+        }
+
+        document.querySelectorAll('[data-range]').forEach(button => {
+            button.addEventListener('click', () => setChartRange(button.dataset.range));
+        });
+
+        function setPercentageMode(enabled) {
+            percentageMode = enabled;
+            document.getElementById('chart-mode-absolute')
+                .setAttribute('aria-pressed', String(!percentageMode));
+            document.getElementById('chart-mode-percentage')
+                .setAttribute('aria-pressed', String(percentageMode));
+            updatePercentageDatasets();
+            if (chartInstance) {
+                chartInstance.update('none');
+                updateChartCaption();
+            }
+        }
+
+        document.getElementById('chart-mode-absolute')
+            .addEventListener('click', () => setPercentageMode(false));
+        document.getElementById('chart-mode-percentage')
+            .addEventListener('click', () => setPercentageMode(true));
+
+        const chartPanel = document.querySelector('.chart-panel');
+        const fullscreenButton = document.getElementById('toggle-chart-fullscreen');
         fullscreenButton.addEventListener('click', async () => {
             try {
-                if (document.fullscreenElement === chartSection) {
+                if (document.fullscreenElement === chartPanel) {
                     await document.exitFullscreen();
                 } else {
-                    await chartSection.requestFullscreen();
+                    await chartPanel.requestFullscreen();
                 }
             } catch (error) {
                 console.error('Impossibile modificare la modalità a schermo intero:', error);
-                fullscreenStatus.textContent = 'Non è stato possibile modificare la modalità a schermo intero.';
+                const status = document.getElementById('load-status');
+                status.textContent = 'Non è stato possibile modificare la modalità a schermo intero.';
+                status.hidden = false;
             }
         });
 
         document.addEventListener('fullscreenchange', () => {
-            const isFullscreen = document.fullscreenElement === chartSection;
-            fullscreenButton.textContent = isFullscreen ? 'Esci da schermo intero' : 'Schermo intero';
+            const isFullscreen = document.fullscreenElement === chartPanel;
             fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
-            fullscreenStatus.textContent = '';
-            if (chartInstance) {
-                chartInstance.resize();
-            }
+            fullscreenButton.setAttribute(
+                'aria-label',
+                isFullscreen ? 'Esci da schermo intero' : 'Visualizza il grafico a schermo intero'
+            );
+            fullscreenButton.title = isFullscreen ? 'Esci da schermo intero' : 'Schermo intero';
+            if (chartInstance) chartInstance.resize();
         });
 
-        // Avvia il caricamento
-        fetchData();
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            const theme = isDarkTheme() ? 'light' : 'dark';
+            document.documentElement.dataset.theme = theme;
+            const button = document.getElementById('theme-toggle');
+            button.setAttribute('aria-label', `Attiva tema ${theme === 'dark' ? 'chiaro' : 'scuro'}`);
+            try {
+                localStorage.setItem('tracker-theme', theme);
+            } catch (error) {
+                console.error('Impossibile salvare il tema selezionato:', error);
+            }
+            updateChartTheme();
+        });
+
+        document.getElementById('theme-toggle').setAttribute(
+            'aria-label',
+            `Attiva tema ${isDarkTheme() ? 'chiaro' : 'scuro'}`
+        );
+        fetchInitialData();
     </script>
 </body>
 </html>

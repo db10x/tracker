@@ -35,16 +35,6 @@ create table dividends (
 
 La tabella `instruments` contiene il ticker canonico e la descrizione; `prices.ticker`, `dividends.ticker` e `portfolio_positions.ticker` lo usano come chiave esterna. `dividends` memorizza l'importo per azione e la data dell'evento riportata da Yahoo Finance, non l'incasso personale né necessariamente la data di pagamento. Gli script mantengono `Anagrafica.csv` come fonte dell'anagrafica: usano `Ticker_yf` per interrogare Yahoo Finance e salvano `Ticker` nel database. `backfill_history.py` inizializza/aggiorna `instruments` insieme allo storico; il job giornaliero sincronizza le descrizioni prima di salvare prezzi e dividendi. Mantieni il CSV nella stessa cartella degli script e includilo nel repository, così sarà disponibile anche in GitHub Actions.
 
-Se hai già creato `instruments` e `prices`, ma non `dividends`, esegui questo SQL per aggiungere la tabella:
-
-```sql
-create table public.dividends (
-    date date not null,
-    ticker text not null references public.instruments (ticker),
-    amount numeric(20, 8) not null check (amount > 0),
-    primary key (date, ticker)
-);
-```
 
 Per aggiungere la gestione dei portafogli, esegui anche questo SQL nel SQL Editor. Su un database che contiene già `instruments` e `prices`, esegui solo questo blocco aggiuntivo, senza ricreare le tabelle esistenti:
 
@@ -110,16 +100,6 @@ create policy "Allow anonymous read access to dividends"
     on public.dividends for select to anon using (true);
 ```
 
-Se hai già applicato le policy per portafogli e posizioni e vuoi aggiungere i dividendi in seguito, applica solo le istruzioni relative a `dividends` qui sopra.
-
-Se avevi seguito le istruzioni precedenti che negavano l'accesso anonimo a `dividends`, concedi la lettura e crea la policy:
-
-```sql
-grant select on public.dividends to anon;
-create policy "Allow anonymous read access to dividends"
-    on public.dividends for select to anon using (true);
-```
-
 Ora recuperiamo le credenziali: premi il tasto Connect nel menu in alto. Nella finestra che si apre a destra seleziona Direct Connection string e come connection method Connection pooler e Type URI. Copia la connection string (sarà simile a postgresql://postgres.wbwwjwfhgvrwtoaitleh:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:6543/postgres). Conserva questa stringa, ti servirà tra poco.
 
 ## Passo 2: Creare il Repository su GitHub
@@ -171,6 +151,17 @@ Sulla sinistra vedrai il flusso di lavoro chiamato Daily ETF Tracker. Cliccaci s
 Sulla destra, vedrai un pulsante con scritto "Run workflow". Cliccaci e conferma cliccando sul bottone verde.
 Dopo qualche secondo, vedrai partire il job. Cliccaci sopra per vedere i log in tempo reale: se vedi il messaggio "Salvato con successo...", significa che l'orologio svizzero del cloud ha fatto il suo dovere!
 Se vai ora nella tabella del tuo database su Supabase (Table Editor > prices), troverai i prezzi dei ticker presenti in `Anagrafica.csv`. Da questo momento in poi, lo script si eseguirà da solo ogni giorno alle 18:00 UTC, weekend inclusi.
+
+## Passo 7: Pubblicare la pagina web con GitHub Pages
+
+Il sito pubblica **solo `index.html`**, che contiene la dashboard. La vecchia pagina di prova è conservata nel repository come `index_old.html` e non viene distribuita. Il workflow `.github/workflows/pages.yml` copia `index.html` nell'artefatto Pages: nessun altro file del repository viene pubblicato.
+
+1. Prima di pubblicare, controlla che `index.html` non contenga password, credenziali o dati che non vuoi rendere pubblici. La chiave Supabase publishable/anon è destinata all'uso nel browser: proteggi i dati con le policy RLS in sola lettura descritte sopra. Non inserire mai `DATABASE_URL` o una chiave Supabase service-role nella pagina. Il sito pubblicato è accessibile a chiunque abbia il link, anche se il repository è privato.
+2. Apri il repository su GitHub e vai in **Settings** > **Pages**. In **Build and deployment**, imposta **Source** su **GitHub Actions**.
+3. Fai commit e push sul branch `main`. Il workflow **Publish Dashboard to GitHub Pages** pubblicherà automaticamente la pagina; puoi anche avviarlo dalla scheda **Actions** con **Run workflow**.
+4. Attendi il completamento del workflow. GitHub mostra l'indirizzo del sito nella pagina **Settings** > **Pages**; per un repository di progetto è normalmente `https://<nome-utente>.github.io/<nome-repository>/`.
+
+Dopo ogni modifica a `index.html`, fai commit e push su `main` per aggiornare il sito. `index_old.html` resta nel repository come backup e non viene pubblicato. Se non trovi l'opzione GitHub Pages per il repository privato, controlla le possibilità offerte dal tuo piano GitHub.
 
 ## Esecuzione manuale sul PC
 
