@@ -224,6 +224,31 @@ def save_dividends_to_db(dividends, ticker, db_driver):
     print(f"Salvati {len(dividends)} dividendi per {ticker}.")
 
 
+def process_instrument(ticker, yahoo_ticker, db_driver):
+    try:
+        prices = get_etf_prices(yahoo_ticker)
+    except Exception as error:
+        print(
+            f"Errore durante il recupero delle quotazioni per "
+            f"{yahoo_ticker} ({ticker}): {error}. "
+            "Continuo con i dividendi e con i ticker successivi."
+        )
+    else:
+        if prices is not None:
+            save_to_db(prices, ticker, db_driver)
+
+    try:
+        dividends = get_etf_dividends(yahoo_ticker)
+    except Exception as error:
+        print(
+            f"Errore durante il recupero dei dividendi per "
+            f"{yahoo_ticker} ({ticker}): {error}. "
+            "Continuo con i ticker successivi."
+        )
+    else:
+        save_dividends_to_db(dividends, ticker, db_driver)
+
+
 if __name__ == "__main__":
     try:
         db_driver = load_psycopg2()
@@ -236,11 +261,7 @@ if __name__ == "__main__":
         sync_instruments_to_db(instruments, db_driver)
 
         for ticker, yahoo_ticker, _ in instruments:
-            prices = get_etf_prices(yahoo_ticker)
-            if prices is not None:
-                save_to_db(prices, ticker, db_driver)
-            dividends = get_etf_dividends(yahoo_ticker)
-            save_dividends_to_db(dividends, ticker, db_driver)
+            process_instrument(ticker, yahoo_ticker, db_driver)
     except Exception as e:
         print(f"Errore durante l'esecuzione: {e}")
         raise SystemExit(1) from e
