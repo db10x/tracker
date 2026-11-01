@@ -83,10 +83,10 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 14px;
+            gap: 20px;
         }
 
-        .brand, .header-actions, .portfolio-control, .chart-toolbar,
+        .brand, .header-actions, .portfolio-control, .portfolio-summary, .chart-toolbar,
         .toolbar-group, .asset-main, .asset-metrics {
             display: flex;
             align-items: center;
@@ -110,6 +110,24 @@
         .brand-title { margin: 0; color: var(--text); font-size: 14px; font-weight: 700; letter-spacing: -.02em; }
         .brand-caption { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
         .header-actions { gap: 8px; }
+
+        .portfolio-summary {
+            flex: 1 1 auto;
+            justify-content: center;
+            min-width: 0;
+        }
+
+        .portfolio-metric {
+            min-width: 0;
+            padding: 0 20px;
+        }
+
+        .portfolio-metric + .portfolio-metric { border-left: 1px solid var(--border); }
+        .portfolio-metric-label { display: block; margin-bottom: 3px; color: var(--muted); font-size: 9px; font-weight: 600; white-space: nowrap; }
+        .portfolio-metric-value { display: block; color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; font-weight: 700; white-space: nowrap; }
+        .portfolio-metric-value.variation-positive { color: var(--positive) !important; }
+        .portfolio-metric-value.variation-negative { color: var(--negative) !important; }
+        .portfolio-metric-separator { color: var(--faint); font-weight: 400; }
 
         .portfolio-control {
             gap: 9px;
@@ -474,6 +492,14 @@
             #asset-list { min-height: 280px; }
         }
 
+        @media (max-width: 1100px) {
+            .header-inner { flex-wrap: wrap; gap: 8px 14px; padding: 8px 0; }
+            .portfolio-summary { order: 3; flex: 1 0 100%; justify-content: space-around; }
+            .portfolio-metric { flex: 1 1 0; padding: 0 12px; }
+            .portfolio-metric:first-child { padding-left: 0; }
+            .portfolio-metric:last-child { padding-right: 0; }
+        }
+
         @media (max-width: 600px) {
             .header-inner, main { width: min(100% - 28px, 1540px); }
             .header-inner { min-height: 54px; gap: 8px; }
@@ -487,6 +513,10 @@
             .control-label { font-size: 8px; letter-spacing: .06em; }
             select { width: 105px; max-width: 32vw; }
             select { font-size: 10px; }
+            .portfolio-summary { justify-content: space-between; }
+            .portfolio-metric { padding: 0 7px; }
+            .portfolio-metric-label { font-size: 8px; }
+            .portfolio-metric-value { font-size: 10px; }
             .icon-button { width: 34px; height: 34px; }
             main { padding-top: 18px; }
             .panel { padding: 14px; }
@@ -498,6 +528,10 @@
             .portfolio-control { max-width: 160px; }
             .control-label { font-size: 7px; }
             select { width: 85px; max-width: 27vw; font-size: 9px; }
+            .portfolio-metric { padding: 0 4px; }
+            .portfolio-metric-value { font-size: 8px; white-space: normal; }
+            .portfolio-metric-separator { display: none; }
+            .portfolio-metric-value > span:last-child { display: block; font-size: 8px; }
             .assets-subheading, .asset-row {
                 grid-template-columns: minmax(0, 1fr) 68px 54px 72px;
                 column-gap: 5px;
@@ -526,6 +560,12 @@
             .chart-wrap { min-height: 0; }
             #asset-list { min-height: 0; }
         }
+
+        @media (min-width: 901px) and (max-width: 1100px) {
+            .header-inner { height: auto; min-height: 0; }
+            main { height: auto; min-height: calc(100vh - 100px); }
+            .dashboard-grid { flex: none; }
+        }
     </style>
 </head>
 <body>
@@ -542,6 +582,28 @@
                     <p class="brand-caption">Panoramica del portafoglio</p>
                 </div>
             </div>
+            <section class="portfolio-summary" aria-label="Riepilogo del portafoglio" aria-live="polite">
+                <div class="portfolio-metric">
+                    <span class="portfolio-metric-label">Valore di mercato</span>
+                    <span id="portfolio-market-value" class="portfolio-metric-value">—</span>
+                </div>
+                <div class="portfolio-metric">
+                    <span class="portfolio-metric-label">P/L attuale</span>
+                    <span class="portfolio-metric-value">
+                        <span id="portfolio-total-change">—</span>
+                        <span class="portfolio-metric-separator"> / </span>
+                        <span id="portfolio-total-change-percent">—</span>
+                    </span>
+                </div>
+                <div class="portfolio-metric">
+                    <span class="portfolio-metric-label">P/L giornaliero</span>
+                    <span class="portfolio-metric-value">
+                        <span id="portfolio-daily-change">—</span>
+                        <span class="portfolio-metric-separator"> / </span>
+                        <span id="portfolio-daily-change-percent">—</span>
+                    </span>
+                </div>
+            </section>
             <div class="header-actions">
                 <label class="portfolio-control" for="portfolio-select">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -639,6 +701,7 @@
         let summarySort = { key: 'ticker', direction: 'asc' };
 
         const numberFormat = new Intl.NumberFormat('it-IT', {
+            useGrouping: true,
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
@@ -650,6 +713,64 @@
             const status = document.getElementById('load-status');
             status.textContent = message;
             status.hidden = !message;
+        }
+
+        function formatSignedCurrency(value) {
+            const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+            return `${sign}${numberFormat.format(Math.abs(value))} €`;
+        }
+
+        function setPortfolioMetric(id, amount, percent) {
+            const amountElement = document.getElementById(id);
+            const valueElement = amountElement.parentElement;
+            amountElement.textContent = formatSignedCurrency(amount);
+            const percentElement = document.getElementById(`${id}-percent`);
+            percentElement.textContent = `${amount > 0 ? '+' : ''}${numberFormat.format(percent)}%`;
+            valueElement.classList.remove('variation-positive', 'variation-negative');
+            if (amount > 0) valueElement.classList.add('variation-positive');
+            if (amount < 0) valueElement.classList.add('variation-negative');
+        }
+
+        function renderPortfolioMetrics(portfolioSummaries) {
+            const marketValueElement = document.getElementById('portfolio-market-value');
+            const pricedPositions = portfolioSummaries.filter(summary => Number.isFinite(summary.marketValue));
+            marketValueElement.textContent = pricedPositions.length
+                ? `${numberFormat.format(pricedPositions.reduce((total, summary) => total + summary.marketValue, 0))} €`
+                : '—';
+
+            const purchasePositions = portfolioSummaries.filter(summary =>
+                Number.isFinite(summary.purchaseChange) && Number.isFinite(summary.purchaseCostBasis)
+            );
+            const purchaseChange = purchasePositions.reduce((total, summary) => total + summary.purchaseChange, 0);
+            const purchaseCostBasis = purchasePositions.reduce((total, summary) => total + summary.purchaseCostBasis, 0);
+            if (purchasePositions.length && purchaseCostBasis > 0) {
+                setPortfolioMetric(
+                    'portfolio-total-change',
+                    purchaseChange,
+                    (purchaseChange / purchaseCostBasis) * 100
+                );
+            } else {
+                document.getElementById('portfolio-total-change').textContent = '—';
+                document.getElementById('portfolio-total-change-percent').textContent = '—';
+                document.getElementById('portfolio-total-change').parentElement.classList.remove('variation-positive', 'variation-negative');
+            }
+
+            const dailyPositions = portfolioSummaries.filter(summary =>
+                Number.isFinite(summary.dailyChange) && Number.isFinite(summary.previousMarketValue)
+            );
+            const dailyChange = dailyPositions.reduce((total, summary) => total + summary.dailyChange, 0);
+            const previousMarketValue = dailyPositions.reduce((total, summary) => total + summary.previousMarketValue, 0);
+            if (dailyPositions.length && previousMarketValue > 0) {
+                setPortfolioMetric(
+                    'portfolio-daily-change',
+                    dailyChange,
+                    (dailyChange / previousMarketValue) * 100
+                );
+            } else {
+                document.getElementById('portfolio-daily-change').textContent = '—';
+                document.getElementById('portfolio-daily-change-percent').textContent = '—';
+                document.getElementById('portfolio-daily-change').parentElement.classList.remove('variation-positive', 'variation-negative');
+            }
         }
 
         function getSeriesRange(chart = chartInstance) {
@@ -905,7 +1026,18 @@
                         quantity,
                         price: Number.isFinite(price) ? price : null,
                         variation,
-                        purchaseVariation
+                        purchaseVariation,
+                        marketValue: Number.isFinite(price) ? price * quantity : null,
+                        dailyChange: Number.isFinite(price) && Number.isFinite(previousPrice)
+                            ? (price - previousPrice) * quantity
+                            : null,
+                        previousMarketValue: Number.isFinite(previousPrice) ? previousPrice * quantity : null,
+                        purchaseChange: Number.isFinite(price) && validAveragePurchasePrice !== null
+                            ? (price - validAveragePurchasePrice) * quantity
+                            : null,
+                        purchaseCostBasis: validAveragePurchasePrice !== null
+                            ? validAveragePurchasePrice * quantity
+                            : null
                     };
                 })
                 .sort((a, b) => a.ticker.localeCompare(b.ticker, 'it'));
@@ -1376,6 +1508,7 @@
         async function handlePortfolioChange(portfolioId) {
             if (!portfolioId) return;
             const requestId = ++portfolioRequestId;
+            renderPortfolioMetrics([]);
             showLoadError('');
             document.getElementById('asset-list').replaceChildren();
             document.getElementById('asset-list').textContent = 'Caricamento dei dati…';
@@ -1396,6 +1529,7 @@
                     if (requestId !== portfolioRequestId) return;
                     console.error('Errore nel recupero delle posizioni del portafoglio:', error);
                     showLoadError('Errore nel caricamento delle posizioni del portafoglio.');
+                    renderPortfolioMetrics(summaries);
                     document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
                     return;
                 }
@@ -1428,6 +1562,7 @@
             if (requestId !== portfolioRequestId) return;
             if (prices === null) {
                 showLoadError('Errore nel caricamento dei prezzi del portafoglio.');
+                renderPortfolioMetrics(summaries);
                 document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
                 return;
             }
@@ -1436,6 +1571,7 @@
             if (requestId !== portfolioRequestId) return;
             if (dividends === null) {
                 showLoadError('Errore nel caricamento dei dividendi del portafoglio.');
+                renderPortfolioMetrics(summaries);
                 document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
                 return;
             }
@@ -1448,6 +1584,7 @@
             if (instrumentsError) {
                 console.error('Errore nel recupero delle descrizioni:', instrumentsError);
                 showLoadError('Errore nel caricamento delle descrizioni dei titoli.');
+                renderPortfolioMetrics(summaries);
                 document.getElementById('portfolio-select').value = activePortfolioId || portfolioId;
                 return;
             }
@@ -1462,6 +1599,7 @@
                 description: descriptions.get(record.ticker) || ''
             }));
             summaries = getSummaries(records, quantities, averagePurchasePrices);
+            renderPortfolioMetrics(summaries);
             selectedTickers = new Set();
             const firstTickerWithPrices = summaries.find(summary => Number.isFinite(summary.price));
             if (firstTickerWithPrices) selectedTickers.add(firstTickerWithPrices.ticker);
