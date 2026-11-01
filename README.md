@@ -187,6 +187,22 @@ Nel file `.env`, sostituisci l'URI di esempio con la connection string del tuo d
 
 Il job giornaliero legge da Yahoo Finance le quotazioni dell'ultimo mese e lo storico dei dividendi disponibile per ciascun ticker. Salva ogni seduta recente non ancora presente nel database usando la data effettiva fornita da Yahoo Finance; questa finestra consente di recuperare anche prezzi aggiornati settimanalmente o pubblicati in ritardo, senza assegnarli al giorno sbagliato. La quotazione odierna, se disponibile, viene aggiornata anche se esiste già; nei giorni senza nuove quotazioni non vengono creati record artificiali. Gli eventi dividendo sono salvati tramite upsert su `(date, ticker)`, quindi riesecuzioni e correzioni dell'importo non creano duplicati.
 
+### Backup del database Supabase
+
+Per creare un backup logico del database, installa gli strumenti client PostgreSQL (con `pg_dump` della stessa versione principale del server o più recente). Usa in `DATABASE_URL` una connessione diretta o il pooler in modalità sessione. Se `pg_dump` non è nel `PATH`, puoi indicarne il percorso completo nel file `.env` del progetto:
+
+```dotenv
+PG_DUMP_PATH=C:\Program Files\PostgreSQL\17\bin\pg_dump.exe
+```
+
+Sostituisci `17` con la versione installata. In alternativa, puoi mettere un percorso relativo alla cartella del progetto, per esempio `tools\postgres\bin\pg_dump.exe`. La variabile d'ambiente `PG_DUMP_PATH`, se impostata, ha la precedenza sul valore nel file `.env`; se non viene impostata, lo script cerca `pg_dump` nel `PATH`. Poi esegui dalla cartella del progetto:
+
+```powershell
+python backup_supabase.py
+```
+
+Lo script legge `DATABASE_URL` e, facoltativamente, `PG_DUMP_PATH` dall'ambiente o da `.env` e salva un dump PostgreSQL in formato custom, con data e ora UTC nel nome, nella cartella `backups/` (creata automaticamente). Il dump include schema e dati di tutti gli schemi del database accessibili all'utente di connessione. I file possono contenere dati riservati: `backups/` è esclusa da Git, non condividerla e conserva una copia anche fuori dal PC. Il dump del database non include le impostazioni del progetto Supabase o i ruoli globali del server. Lo script segnala gli errori e non lascia un file di backup finale parziale.
+
 ### Caricamento iniziale dello storico
 
 Per popolare `prices` con lo storico dei prezzi dal 1° gennaio 2022 e `dividends` con tutti gli eventi storici disponibili su Yahoo Finance per i ticker in `Anagrafica.csv`, esegui manualmente `backfill_history.py` dalla cartella del progetto:

@@ -19,6 +19,7 @@ Non ci sono backend applicativi o framework di build: la UI è una pagina static
 | --- | --- |
 | `tracker.py` | Lettura CSV, sincronizzazione anagrafica, recupero prezzi e dividendi Yahoo Finance e upsert nel database PostgreSQL. |
 | `backfill_history.py` | Sincronizzazione anagrafica e caricamento manuale dello storico di prezzi e dividendi Yahoo Finance. |
+| `backup_supabase.py` | Creazione di un dump PostgreSQL custom del database Supabase in `backups/`, usando `DATABASE_URL` e `pg_dump` (risolto da `PG_DUMP_PATH` o dal `PATH`). |
 | `index.html` | Pagina pubblicata con grafico affiancato all'elenco delle posizioni; le righe filtrano le serie visualizzate. |
 | `index_old.html` | Versione di prova precedente, conservata nel repository come backup e non pubblicata. |
 | `requirements.txt` | Dipendenze Python (`yfinance`, `psycopg2-binary`, `python-dotenv`). |
@@ -42,6 +43,7 @@ Non ci sono backend applicativi o framework di build: la UI è una pagina static
 - All'avvio lo script verifica che `psycopg2` sia installato e che `DATABASE_URL` sia impostata; in caso contrario stampa un errore esplicito e termina con codice 1. `psycopg2-binary` è già dichiarato in `requirements.txt`. La connessione/cursore vengono chiusi solo nel percorso senza eccezioni.
 - `backfill_history.py` è uno script manuale separato: per ogni `Ticker_yf` usa `Ticker.history(start="2022-01-01", auto_adjust=False)` per i prezzi e `Ticker.dividends` per i dividendi, filtrando entrambi dal 1° gennaio 2022 incluso. Se per un ticker non trova prezzi validi, stampa un avviso, raccoglie comunque gli eventuali dividendi e continua con i ticker successivi. Salva le chiusure `Close` con le date effettive e i dividendi alle date fornite da Yahoo inserendo solo righe mancanti con `ON CONFLICT DO NOTHING`; non modifica prezzi o importi già presenti. Dopo aver elaborato i ticker sincronizza anagrafica, prezzi e dividendi disponibili in un'unica transazione.
 - Entrambi gli script caricano `DATABASE_URL` dal file `.env` nella cartella del progetto tramite `python-dotenv`, senza sovrascrivere un valore già presente nell'ambiente. `.env` è escluso da Git; `.env.example` contiene solo un URI segnaposto.
+- `backup_supabase.py` usa `pg_dump` (strumento client PostgreSQL installato separatamente), risolto dal percorso configurato in `PG_DUMP_PATH` oppure dal `PATH`, per salvare schema e dati accessibili in un archivio custom con timestamp UTC sotto `backups/`. `PG_DUMP_PATH` può essere impostato nel `.env` del progetto con percorso assoluto o relativo alla cartella del progetto. La cartella `backups/` è esclusa da Git perché i dump possono contenere dati riservati; il backup è logico e non include impostazioni Supabase o ruoli globali del server.
 
 ### Schema database atteso
 
