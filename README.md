@@ -50,15 +50,24 @@ create table public.portfolio_positions (
     ticker text not null
         references public.instruments (ticker),
     quantity numeric(20, 8) not null check (quantity > 0),
+    average_purchase_price numeric(20, 8) check (average_purchase_price > 0),
     primary key (portfolio_id, ticker)
 );
 ```
 
-`portfolios` contiene un record per portafoglio, identificato da un ID intero assegnato automaticamente; `portfolio_positions` contiene una riga per ticker e portafoglio, con la quantità posseduta. La chiave primaria composta impedisce duplicati dello stesso ticker nel portafoglio. Per aggiungere più titoli dello stesso ticker, aggiorna la quantità della riga esistente. `quantity` accetta frazioni di titolo; se usi esclusivamente titoli interi, puoi sostituirla con `integer`. Le due tabelle non includono date di creazione, non necessarie alla pagina.
+Se `portfolio_positions` esiste già, aggiungi la colonna del prezzo medio di acquisto con:
+
+```sql
+alter table public.portfolio_positions
+    add column average_purchase_price numeric(20, 8)
+    check (average_purchase_price > 0);
+```
+
+`portfolios` contiene un record per portafoglio, identificato da un ID intero assegnato automaticamente; `portfolio_positions` contiene una riga per ticker e portafoglio, con quantità posseduta e prezzo medio di acquisto. La chiave primaria composta impedisce duplicati dello stesso ticker nel portafoglio. Per aggiungere più titoli dello stesso ticker, aggiorna la quantità e il prezzo medio della riga esistente. `quantity` accetta frazioni di titolo; `average_purchase_price` è facoltativo e deve essere positivo: finché non è valorizzato, la variazione rispetto all'acquisto non viene mostrata. Se usi esclusivamente titoli interi, puoi sostituire `quantity` con `integer`. Le due tabelle non includono date di creazione, non necessarie alla pagina.
 
 Nella pagina, il menu consente di scegliere solo un portafoglio: all'avvio viene selezionato il primo in ordine alfabetico e vengono caricati solo i suoi prezzi e le sue posizioni. Se non ci sono portafogli, la pagina chiede di crearne uno invece di mostrare tutti i ticker.
 
-La pagina web visualizza i dati con la chiave pubblica Supabase: abilita RLS e consenti al ruolo `anon` solo la lettura delle cinque tabelle usate dalla pagina. Nomi dei portafogli, posizioni, quantità e importi dei dividendi dei ticker presenti nei portafogli saranno leggibili pubblicamente. La pagina non mostra una tabella dei dividendi: visualizza solo un marcatore `D` sul grafico per ciascun evento, con tooltip sull'importo per azione. Non concedere permessi di scrittura a `anon`. Per un database nuovo, applica:
+La pagina web visualizza i dati con la chiave pubblica Supabase: abilita RLS e consenti al ruolo `anon` solo la lettura delle cinque tabelle usate dalla pagina. Nomi dei portafogli, posizioni, quantità, prezzi medi di acquisto e importi dei dividendi dei ticker presenti nei portafogli saranno leggibili pubblicamente. La pagina mostra la variazione percentuale rispetto al prezzo medio di acquisto quando il dato è disponibile e non mostra una tabella dei dividendi: visualizza solo un marcatore `D` sul grafico per ciascun evento, con tooltip sull'importo per azione. Non concedere permessi di scrittura a `anon`. Per un database nuovo, applica:
 
 ```sql
 alter table public.instruments enable row level security;
@@ -186,6 +195,6 @@ Per popolare `prices` con lo storico dei prezzi dal 1° gennaio 2022 e `dividend
 python backfill_history.py
 ```
 
-Lo script scarica le chiusure e i dividendi da Yahoo Finance dal 1° gennaio 2022 incluso, usando `Ticker_yf`; salva `Ticker` come identificativo canonico e sincronizza ticker e descrizioni del CSV in `instruments`. I dividendi sono importi per azione alle date indicate da Yahoo Finance, non una ricostruzione degli incassi del portafoglio. Prima di scrivere nel database verifica i dati di tutti i ticker; poi salva anagrafica, prezzi e dividendi in un'unica transazione. Upsert e chiavi univoche consentono di rilanciarlo senza creare duplicati. Richiede le stesse dipendenze e la stessa variabile `DATABASE_URL` dello script giornaliero.
+Lo script scarica le chiusure e i dividendi da Yahoo Finance dal 1° gennaio 2022 incluso, usando `Ticker_yf`; salva `Ticker` come identificativo canonico e sincronizza ticker e descrizioni del CSV in `instruments`. I dividendi sono importi per azione alle date indicate da Yahoo Finance, non una ricostruzione degli incassi del portafoglio. Se per un ticker non sono disponibili prezzi, lo script mostra un avviso, continua a raccogliere eventuali dividendi e passa al ticker successivo. Prima di scrivere nel database verifica i dati raccolti; poi salva anagrafica, prezzi e dividendi disponibili in un'unica transazione. Per prezzi e dividendi inserisce solo le date mancanti e lascia invariati i record già presenti. Le chiavi univoche consentono di rilanciarlo senza creare duplicati. Richiede le stesse dipendenze e la stessa variabile `DATABASE_URL` dello script giornaliero.
 
 Per verificare che la variabile sia caricata puoi eseguire `$env:DATABASE_URL` in PowerShell; il valore salvato nel file locale viene letto all'avvio degli script.

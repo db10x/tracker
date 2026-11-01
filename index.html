@@ -375,7 +375,7 @@
         .assets-panel { padding: 0; overflow: hidden; }
         .assets-subheading {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 82px 64px;
+            grid-template-columns: minmax(0, 1fr) 82px 64px 78px;
             column-gap: 8px;
             padding: 5px 12px 5px 14px;
             border-bottom: 1px solid var(--border);
@@ -404,7 +404,8 @@
             color: var(--accent);
         }
 
-        .sort-button[data-sort="price"], .sort-button[data-sort="variation"] { text-align: right; }
+        .sort-button[data-sort="price"], .sort-button[data-sort="variation"],
+        .sort-button[data-sort="purchaseVariation"] { text-align: right; }
         .sort-indicator { display: inline-block; margin-left: 2px; }
 
         #asset-list { flex: 1; overflow: auto; }
@@ -412,7 +413,7 @@
         .asset-row {
             width: 100%;
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 82px 64px;
+            grid-template-columns: minmax(0, 1fr) 82px 64px 78px;
             grid-template-rows: auto auto;
             column-gap: 8px;
             row-gap: 3px;
@@ -446,9 +447,10 @@
 
         .asset-ticker { flex: 0 0 auto; color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; font-weight: 700; }
         .asset-description { min-width: 0; max-width: 190px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-        .asset-price, .asset-variation { color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; font-weight: 600; text-align: right; white-space: nowrap; }
+        .asset-price, .asset-variation, .asset-purchase-variation { color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; font-weight: 600; text-align: right; white-space: nowrap; }
         .asset-price { grid-column: 2; grid-row: 1; }
         .asset-variation { grid-column: 3; grid-row: 1; }
+        .asset-purchase-variation { grid-column: 4; grid-row: 1; }
         .asset-metrics { grid-column: 1 / -1; grid-row: 2; margin-left: 17px; color: var(--faint); font-family: "SFMono-Regular", Consolas, monospace; font-size: 9px; line-height: 1.2; }
 
         .variation-positive { color: var(--positive) !important; }
@@ -497,7 +499,7 @@
             .control-label { font-size: 7px; }
             select { width: 85px; max-width: 27vw; font-size: 9px; }
             .assets-subheading, .asset-row {
-                grid-template-columns: minmax(0, 1fr) 68px 54px;
+                grid-template-columns: minmax(0, 1fr) 68px 54px 72px;
                 column-gap: 5px;
             }
 
@@ -506,7 +508,7 @@
             .asset-text { gap: 5px; }
             .asset-ticker { font-size: 10px; }
             .asset-description { font-size: 8px; }
-            .asset-price, .asset-variation { font-size: 9px; }
+            .asset-price, .asset-variation, .asset-purchase-variation { font-size: 9px; }
         }
 
         @media (min-width: 901px) {
@@ -608,6 +610,7 @@
                     <button class="sort-button" type="button" data-sort="ticker" aria-sort="ascending">Ticker<span class="sort-indicator" aria-hidden="true">↑</span></button>
                     <button class="sort-button" type="button" data-sort="price" aria-sort="none">Prezzo<span class="sort-indicator" aria-hidden="true"></span></button>
                     <button class="sort-button" type="button" data-sort="variation" aria-sort="none">Var. %<span class="sort-indicator" aria-hidden="true"></span></button>
+                    <button class="sort-button" type="button" data-sort="purchaseVariation" aria-sort="none" title="Variazione rispetto al prezzo medio di acquisto">Acq. %<span class="sort-indicator" aria-hidden="true"></span></button>
                 </div>
                 <div id="asset-list" aria-label="Titoli nel portafoglio">
                     <p class="section-description" style="padding:18px">Caricamento dei dati…</p>
@@ -867,7 +870,7 @@
             chartInstance.update('none');
         }
 
-        function getSummaries(records, quantities) {
+        function getSummaries(records, quantities, averagePurchasePrices) {
             const byTicker = new Map();
             records.forEach(record => {
                 if (!byTicker.has(record.ticker)) byTicker.set(record.ticker, []);
@@ -887,13 +890,22 @@
                         && previousPrice !== 0
                         ? ((price - previousPrice) / previousPrice) * 100
                         : null;
+                    const averagePurchasePrice = averagePurchasePrices.get(ticker);
+                    const validAveragePurchasePrice = Number.isFinite(averagePurchasePrice)
+                        && averagePurchasePrice > 0
+                        ? averagePurchasePrice
+                        : null;
+                    const purchaseVariation = Number.isFinite(price) && validAveragePurchasePrice !== null
+                        ? ((price - validAveragePurchasePrice) / validAveragePurchasePrice) * 100
+                        : null;
 
                     return {
                         ticker,
                         description: latest?.description || '',
                         quantity,
                         price: Number.isFinite(price) ? price : null,
-                        variation
+                        variation,
+                        purchaseVariation
                     };
                 })
                 .sort((a, b) => a.ticker.localeCompare(b.ticker, 'it'));
@@ -925,7 +937,7 @@
                 button.disabled = !Number.isFinite(summary.price);
                 button.setAttribute('aria-pressed', String(selectedTickers.has(summary.ticker)));
                 button.setAttribute('aria-label',
-                    `${summary.ticker}, ${summary.description || 'nessuna descrizione'}, ${Number.isFinite(summary.price) ? `${numberFormat.format(summary.price)} euro` : 'nessun prezzo'}, ${selectedTickers.has(summary.ticker) ? 'visibile nel grafico' : 'non visibile nel grafico'}`);
+                    `${summary.ticker}, ${summary.description || 'nessuna descrizione'}, ${Number.isFinite(summary.price) ? `${numberFormat.format(summary.price)} euro` : 'nessun prezzo'}, variazione rispetto all'acquisto ${summary.purchaseVariation === null ? 'non disponibile' : `${numberFormat.format(summary.purchaseVariation)} percento`}, ${selectedTickers.has(summary.ticker) ? 'visibile nel grafico' : 'non visibile nel grafico'}`);
                 if (selectedTickers.has(summary.ticker)) button.classList.add('is-active');
 
                 const main = document.createElement('span');
@@ -959,6 +971,15 @@
                     if (summary.variation > 0) variation.classList.add('variation-positive');
                     if (summary.variation < 0) variation.classList.add('variation-negative');
                 }
+                const purchaseVariation = document.createElement('span');
+                purchaseVariation.className = 'asset-purchase-variation';
+                if (summary.purchaseVariation === null) {
+                    purchaseVariation.textContent = '—';
+                } else {
+                    purchaseVariation.textContent = `${summary.purchaseVariation > 0 ? '+' : ''}${numberFormat.format(summary.purchaseVariation)}%`;
+                    if (summary.purchaseVariation > 0) purchaseVariation.classList.add('variation-positive');
+                    if (summary.purchaseVariation < 0) purchaseVariation.classList.add('variation-negative');
+                }
                 main.append(identity, price);
 
                 const metrics = document.createElement('span');
@@ -966,7 +987,7 @@
                 const quantity = document.createElement('span');
                 quantity.textContent = `Quantità ${new Intl.NumberFormat('it-IT', { maximumFractionDigits: 8 }).format(summary.quantity)}`;
                 metrics.append(quantity);
-                button.append(main, variation, metrics);
+                button.append(main, variation, purchaseVariation, metrics);
                 button.addEventListener('click', () => toggleTicker(summary.ticker));
                 list.appendChild(button);
             });
@@ -1366,7 +1387,7 @@
                 const from = page * pageSize;
                 const { data, error } = await supabaseClient
                     .from('portfolio_positions')
-                    .select('ticker, quantity')
+                    .select('ticker, quantity, average_purchase_price')
                     .eq('portfolio_id', portfolioId)
                     .order('ticker', { ascending: true })
                     .range(from, from + pageSize - 1);
@@ -1387,6 +1408,12 @@
             const quantities = new Map(allPositions.map(position =>
                 [position.ticker, Number(position.quantity)]
             ));
+            const averagePurchasePrices = new Map(allPositions.map(position => [
+                position.ticker,
+                position.average_purchase_price === null || position.average_purchase_price === undefined
+                    ? null
+                    : Number(position.average_purchase_price)
+            ]));
 
             if (quantities.size === 0) {
                 activePortfolioId = portfolioId;
@@ -1434,7 +1461,7 @@
                 price: Number(record.price),
                 description: descriptions.get(record.ticker) || ''
             }));
-            summaries = getSummaries(records, quantities);
+            summaries = getSummaries(records, quantities, averagePurchasePrices);
             selectedTickers = new Set();
             const firstTickerWithPrices = summaries.find(summary => Number.isFinite(summary.price));
             if (firstTickerWithPrices) selectedTickers.add(firstTickerWithPrices.ticker);

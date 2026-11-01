@@ -20,36 +20,43 @@ def get_ticker_history(ticker, yahoo_ticker):
         start=HISTORY_START_DATE,
         auto_adjust=False,
     )
-    if history.empty:
-        raise ValueError(f"Nessun dato storico trovato per {yahoo_ticker}")
-    if "Close" not in history.columns:
-        raise ValueError(
-            f"La colonna 'Close' manca nello storico di {yahoo_ticker}"
-        )
-
-    close_prices = history["Close"].dropna()
-    if close_prices.empty:
-        raise ValueError(f"Nessun prezzo di chiusura valido per {yahoo_ticker}")
-
     rows = []
-    for session_date, close_price in close_prices.items():
-        date_str = session_date.strftime("%Y-%m-%d")
-        if date_str < HISTORY_START_DATE:
-            continue
-
-        price = float(close_price)
-        if not math.isfinite(price):
-            raise ValueError(
-                f"Prezzo non valido nello storico di {yahoo_ticker}"
-            )
-        rows.append((date_str, ticker, price))
-
-    if not rows:
-        raise ValueError(
-            f"Nessun prezzo di chiusura disponibile per {ticker} "
-            f"({yahoo_ticker}) "
-            f"dal {HISTORY_START_DATE}"
+    if history.empty:
+        print(
+            f"Avviso: nessun dato storico dei prezzi trovato per "
+            f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
         )
+    elif "Close" not in history.columns:
+        print(
+            f"Avviso: la colonna 'Close' manca nello storico di "
+            f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
+        )
+    else:
+        close_prices = history["Close"].dropna()
+        if close_prices.empty:
+            print(
+                f"Avviso: nessun prezzo di chiusura valido trovato per "
+                f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
+            )
+        else:
+            for session_date, close_price in close_prices.items():
+                date_str = session_date.strftime("%Y-%m-%d")
+                if date_str < HISTORY_START_DATE:
+                    continue
+
+                price = float(close_price)
+                if not math.isfinite(price):
+                    raise ValueError(
+                        f"Prezzo non valido nello storico di {yahoo_ticker}"
+                    )
+                rows.append((date_str, ticker, price))
+
+        if not rows:
+            print(
+                f"Avviso: nessun prezzo di chiusura disponibile per "
+                f"{ticker} ({yahoo_ticker}) dal {HISTORY_START_DATE}; "
+                "continuo con dividendi e ticker successivi."
+            )
 
     dividend_rows = []
     for event_date, amount in yahoo_instrument.dividends.items():
@@ -65,11 +72,14 @@ def get_ticker_history(ticker, yahoo_ticker):
             )
         dividend_rows.append((event_date_str, ticker, amount))
 
-    print(
-        f"{ticker}: {len(rows)} quotazioni "
-        f"dal {rows[0][0]} al {rows[-1][0]}; "
-        f"{len(dividend_rows)} dividendi storici"
-    )
+    if rows:
+        print(
+            f"{ticker}: {len(rows)} quotazioni "
+            f"dal {rows[0][0]} al {rows[-1][0]}; "
+            f"{len(dividend_rows)} dividendi storici"
+        )
+    else:
+        print(f"{ticker}: 0 quotazioni; {len(dividend_rows)} dividendi storici")
     return rows, dividend_rows
 
 
@@ -81,13 +91,13 @@ def save_history_to_db(
         INSERT INTO prices (date, ticker, price)
         VALUES %s
         ON CONFLICT (date, ticker)
-        DO UPDATE SET price = EXCLUDED.price;
+        DO NOTHING;
     """
     dividend_query = """
         INSERT INTO dividends (date, ticker, amount)
         VALUES %s
         ON CONFLICT (date, ticker)
-        DO UPDATE SET amount = EXCLUDED.amount;
+        DO NOTHING;
     """
 
     connection = db_driver.connect(database_url)
@@ -107,8 +117,8 @@ def save_history_to_db(
         connection.close()
 
     print(
-        f"Salvate {len(price_rows)} quotazioni e "
-        f"{len(dividend_rows)} dividendi storici nel database."
+        f"Elaborate {len(price_rows)} quotazioni e "
+        f"{len(dividend_rows)} righe di dividendi storici nel database."
     )
 
 
