@@ -193,7 +193,14 @@
 
         .chart-toolbar { flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 4px 0 8px; }
         .toolbar-group { flex-wrap: wrap; gap: 5px; }
-        .chart-display-controls { display: flex; align-items: center; gap: 10px; }
+        .chart-display-controls {
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+        }
 
         .range-button, .mode-button, .fullscreen-button {
             min-height: 30px;
@@ -234,6 +241,7 @@
 
         .mode-button:first-child { border-radius: 8px 0 0 8px; }
         .mode-button + .mode-button { margin-left: -1px; border-radius: 0 8px 8px 0; }
+        .total-return-button { border-radius: 8px; }
 
         .mode-button[aria-pressed="true"] {
             position: relative;
@@ -569,6 +577,8 @@
                             <button id="chart-mode-absolute" class="mode-button" type="button" aria-pressed="true" disabled>Prezzo (€)</button>
                             <button id="chart-mode-percentage" class="mode-button" type="button" aria-pressed="false" disabled>Percentuale (%)</button>
                         </div>
+                        <button id="chart-mode-total-return" class="mode-button total-return-button" type="button"
+                            aria-pressed="false" title="Adegua lo storico ai dividendi ricevuti" disabled>Total return</button>
                         <button id="toggle-chart-fullscreen" class="fullscreen-button" type="button"
                             aria-label="Visualizza il grafico a schermo intero" title="Schermo intero" aria-pressed="false">
                             <svg class="fullscreen-enter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -622,6 +632,7 @@
         let selectedTickers = new Set();
         let selectedRange = 'all';
         let percentageMode = false;
+        let totalReturnMode = false;
         let summarySort = { key: 'ticker', direction: 'asc' };
 
         const numberFormat = new Intl.NumberFormat('it-IT', {
@@ -686,7 +697,7 @@
             chartInstance.resetZoom();
             chartInstance.options.scales.x.min = visibleRange.min;
             chartInstance.options.scales.x.max = visibleRange.max;
-            updatePercentageDatasets();
+            updatePercentageDatasets(visibleRange);
             chartInstance.update('none');
             updateRangeButtons();
             updateChartCaption();
@@ -699,33 +710,89 @@
             });
         }
 
-        function updatePercentageDatasets() {
+        function updatePercentageDatasets(range = null) {
             if (!chartInstance) return;
-            const start = Math.max(0, Math.floor(chartInstance.scales.x.min ?? 0));
+            const start = Math.min(
+                chartInstance.data.labels.length - 1,
+                Math.max(0, Math.ceil(range?.min ?? chartInstance.scales.x.min ?? 0))
+            );
             const end = Math.min(
                 chartInstance.data.labels.length - 1,
-                Math.ceil(chartInstance.scales.x.max ?? chartInstance.data.labels.length - 1)
+                Math.ceil(range?.max ?? chartInstance.scales.x.max ?? chartInstance.data.labels.length - 1)
             );
 
             chartInstance.data.datasets.forEach(dataset => {
+                const sourceData = totalReturnMode ? dataset.totalReturnData : dataset.rawData;
                 if (!percentageMode) {
-                    dataset.data = dataset.rawData;
+                    dataset.data = sourceData;
                     return;
                 }
 
                 let basePrice = null;
-                for (let index = start; index <= end; index++) {
-                    if (dataset.rawData[index] !== null) {
-                        basePrice = dataset.rawData[index];
+                let baseIndex = -1;
+                for (let index = start; index >= 0; index--) {
+                    if (sourceData[index] !== null) {
+                        basePrice = sourceData[index];
+                        baseIndex = index;
                         break;
                     }
                 }
-                dataset.data = dataset.rawData.map(price =>
+                if (basePrice === null) {
+                    for (let index = start + 1; index <= end; index++) {
+                        if (sourceData[index] !== null) {
+                            basePrice = sourceData[index];
+                            baseIndex = index;
+                            break;
+                        }
+                    }
+                }
+                dataset.data = sourceData.map(price =>
                     price === null || basePrice === null || basePrice === 0
                         ? null
                         : ((price - basePrice) / basePrice) * 100
                 );
+                if (baseIndex < start && baseIndex >= 0 && sourceData[start] === null) {
+                    dataset.data[start] = 0;
+                }
             });
+        }
+
+        function getTotalReturnData(rawData, tickerDividends, ticker, dates) {
+            const dividendsByDate = new Map();
+            tickerDividends.forEach(dividend => {
+                dividendsByDate.set(
+                    dividend.dateIndex,
+                    (dividendsByDate.get(dividend.dateIndex) || 0) + dividend.amount
+                );
+            });
+
+            const previousPrices = [];
+            let previousPrice = null;
+            rawData.forEach((price, index) => {
+                previousPrices[index] = previousPrice;
+                if (price !== null) previousPrice = price;
+            });
+
+            const totalReturnData = Array(rawData.length).fill(null);
+            let adjustmentFactor = 1;
+            for (let index = rawData.length - 1; index >= 0; index--) {
+                const price = rawData[index];
+                if (price !== null) totalReturnData[index] = price * adjustmentFactor;
+
+                const dividendAmount = dividendsByDate.get(index);
+                if (dividendAmount === undefined) continue;
+                const priceBeforeDividend = previousPrices[index];
+                if (priceBeforeDividend === null) continue;
+                const factor = (priceBeforeDividend - dividendAmount) / priceBeforeDividend;
+                if (!Number.isFinite(factor) || factor <= 0 || factor > 1) {
+                    const message = `Dividendo non valido per ${ticker} il ${dates[index]}: non incluso nel calcolo del total return.`;
+                    console.error(message, { dividendAmount, priceBeforeDividend });
+                    showLoadError(message);
+                    continue;
+                }
+                adjustmentFactor *= factor;
+            }
+            return totalReturnData;
         }
 
         function updateChartCaption() {
@@ -939,14 +1006,15 @@
             }
 
             renderAssetList();
+            let visibleRange = null;
             if (selectedRange === 'all') {
-                const range = getSeriesRange();
-                if (range) {
-                    chartInstance.options.scales.x.min = range.min;
-                    chartInstance.options.scales.x.max = range.max;
+                visibleRange = getSeriesRange();
+                if (visibleRange) {
+                    chartInstance.options.scales.x.min = visibleRange.min;
+                    chartInstance.options.scales.x.max = visibleRange.max;
                 }
             }
-            updatePercentageDatasets();
+            updatePercentageDatasets(visibleRange);
             chartInstance.update('none');
             updateChartCaption();
         }
@@ -981,6 +1049,13 @@
             const pricesByTicker = new Map(chartTickers.map(ticker => [ticker, new Map()]));
             records.forEach(record => pricesByTicker.get(record.ticker).set(record.date, Number(record.price)));
 
+            const dividendEvents = dividends
+                .map(dividend => ({
+                    ...dividend,
+                    amount: Number(dividend.amount),
+                    dateIndex: dates.indexOf(dividend.date)
+                }))
+                .filter(dividend => dividend.dateIndex >= 0);
             const datasets = chartTickers.map((ticker, index) => {
                 const data = dates.map(date => pricesByTicker.get(ticker).get(date) ?? null);
                 const summaryIndex = summaries.findIndex(summary => summary.ticker === ticker);
@@ -989,6 +1064,12 @@
                     label: ticker,
                     data,
                     rawData: data,
+                    totalReturnData: getTotalReturnData(
+                        data,
+                        dividendEvents.filter(dividend => dividend.ticker === ticker),
+                        ticker,
+                        dates
+                    ),
                     hidden: !selectedTickers.has(ticker),
                     spanGaps: true,
                     borderColor: color,
@@ -1004,13 +1085,6 @@
             const datasetIndexesByTicker = new Map(
                 datasets.map((dataset, index) => [dataset.label, index])
             );
-            const dividendEvents = dividends
-                .map(dividend => ({
-                    ...dividend,
-                    amount: Number(dividend.amount),
-                    dateIndex: dates.indexOf(dividend.date)
-                }))
-                .filter(dividend => dividend.dateIndex >= 0);
             const markerRadius = 7;
             let hoveredDividend = null;
             const hideDividendTooltip = () => {
@@ -1422,6 +1496,15 @@
             .addEventListener('click', () => setPercentageMode(false));
         document.getElementById('chart-mode-percentage')
             .addEventListener('click', () => setPercentageMode(true));
+        document.getElementById('chart-mode-total-return').addEventListener('click', event => {
+            totalReturnMode = !totalReturnMode;
+            event.currentTarget.setAttribute('aria-pressed', String(totalReturnMode));
+            updatePercentageDatasets();
+            if (chartInstance) {
+                chartInstance.update('none');
+                updateChartCaption();
+            }
+        });
 
         const chartPanel = document.querySelector('.chart-panel');
         const fullscreenButton = document.getElementById('toggle-chart-fullscreen');

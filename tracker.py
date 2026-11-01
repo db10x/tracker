@@ -93,7 +93,7 @@ def get_etf_prices(yahoo_ticker):
     print(f"Recupero dati per {yahoo_ticker}...")
     etf = yf.Ticker(yahoo_ticker)
 
-    df = etf.history(period=PRICE_HISTORY_PERIOD)
+    df = etf.history(period=PRICE_HISTORY_PERIOD, auto_adjust=False)
     if df.empty:
         print(
             f"Nessuna quotazione disponibile negli ultimi "
