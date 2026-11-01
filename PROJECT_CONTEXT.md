@@ -4,11 +4,11 @@ Questa guida riassume lo stato del repository e le dipendenze tra codice e infra
 
 ## Scopo e flusso dei dati
 
-Il progetto registra lo storico dei prezzi e dei dividendi dei titoli elencati in `Anagrafica.csv`. Gli script interrogano Yahoo Finance con `Ticker_yf`, mentre il database e la pagina usano `Ticker` come identificativo canonico e mostrano `Descrizione`.
+Il progetto registra lo storico dei prezzi e dei dividendi dei titoli elencati in `Anagrafica.csv`. Gli script interrogano Yahoo Finance quando `Ticker_yf` è valorizzato; altrimenti usano EODHD con `Ticker_EODHD` per le chiusure, mentre il database e la pagina usano `Ticker` come identificativo canonico e mostrano `Descrizione`.
 
 1. Il workflow GitHub Actions `.github/workflows/tracker.yml` esegue `tracker.py` alle 18:00 UTC ogni giorno e può essere avviato anche manualmente.
-2. Gli script leggono `Ticker`, `Ticker_yf` e `Descrizione` da `Anagrafica.csv`; usano `Ticker_yf` per Yahoo Finance e sincronizzano ticker/descrizione in `instruments`.
-3. `tracker.py` connette PostgreSQL su Supabase usando il secret Actions `DATABASE_URL` e aggiorna i prezzi recenti e gli eventi dividendo da Yahoo Finance.
+2. Gli script leggono `Ticker`, `Ticker_yf`, `Ticker_EODHD` e `Descrizione` da `Anagrafica.csv`; danno priorità a Yahoo Finance e usano EODHD quando `Ticker_yf` è vuoto.
+3. `tracker.py` connette PostgreSQL su Supabase usando il secret Actions `DATABASE_URL` e aggiorna prezzi e dividendi Yahoo; EODHD fornisce le chiusure ma non viene usato per i dividendi.
 4. `index.html` interroga Supabase direttamente dal browser usando la chiave pubblica, carica prezzi, dividendi, descrizioni e portafogli, e mostra grafico e posizioni filtrabili per portafoglio. Gli eventi dividendo sono indicati sul grafico con marcatori e tooltip. `index_old.html` è la versione di prova conservata come backup.
 
 Non ci sono backend applicativi o framework di build: la UI è una pagina statica autonoma e lo script è un job batch.
@@ -17,12 +17,13 @@ Non ci sono backend applicativi o framework di build: la UI è una pagina static
 
 | File | Responsabilità |
 | --- | --- |
-| `tracker.py` | Lettura CSV, sincronizzazione anagrafica, recupero prezzi e dividendi Yahoo Finance e upsert nel database PostgreSQL. |
-| `backfill_history.py` | Sincronizzazione anagrafica e caricamento manuale dello storico di prezzi e dividendi Yahoo Finance. |
+| `tracker.py` | Lettura CSV, sincronizzazione anagrafica, recupero prezzi da Yahoo Finance o EODHD, dividendi Yahoo e upsert nel database PostgreSQL. |
+| `backfill_history.py` | Sincronizzazione anagrafica e caricamento manuale dello storico prezzi da Yahoo Finance o EODHD e dei dividendi Yahoo. |
+| `eodhd.py` | Richiesta e validazione delle chiusure giornaliere EODHD con limite massimo di 365 giorni. |
 | `backup_supabase.py` | Creazione di un dump PostgreSQL custom del database Supabase in `backups/`, usando `DATABASE_URL` e `pg_dump` (risolto da `PG_DUMP_PATH` o dal `PATH`). |
 | `index.html` | Pagina pubblicata con grafico affiancato all'elenco delle posizioni; le righe filtrano le serie visualizzate. |
 | `index_old.html` | Versione di prova precedente, conservata nel repository come backup e non pubblicata. |
-| `requirements.txt` | Dipendenze Python (`yfinance`, `psycopg2-binary`, `python-dotenv`). |
+| `requirements.txt` | Dipendenze Python (`yfinance`, `psycopg2-binary`, `python-dotenv`); EODHD usa la libreria standard. |
 | `.env.example` / `.gitignore` | Esempio della configurazione locale e protezione dei file `.env` dai commit. |
 | `.github/workflows/tracker.yml` | Pianificazione e avvio del job Python su GitHub Actions. |
 | `.github/workflows/pages.yml` | Pubblicazione su GitHub Pages del solo `index.html`. |
@@ -32,16 +33,17 @@ Non ci sono backend applicativi o framework di build: la UI è una pagina static
 
 ### Script Python
 
-- `Anagrafica.csv` viene letto a ogni esecuzione con separatore `;` e deve contenere `Ticker`, `Ticker_yf` e `Descrizione`. `Ticker` deve essere univoco e entrambi i ticker devono essere valorizzati; una descrizione vuota è ammessa.
-- `Ticker_yf` è usato solo per le richieste a Yahoo Finance. `Ticker` è la chiave canonica salvata in `prices.ticker` e `instruments.ticker`.
+- `Anagrafica.csv` viene letto a ogni esecuzione con separatore `;` e deve contenere `Ticker`, `Ticker_yf`, `Ticker_EODHD` e `Descrizione`. `Ticker` deve essere univoco e almeno uno tra i ticker sorgente deve essere valorizzato; una descrizione vuota è ammessa.
+- Se `Ticker_yf` è valorizzato, viene usato Yahoo Finance; solo se è vuoto viene usato `Ticker_EODHD`. `Ticker` è la chiave canonica salvata in `prices.ticker` e `instruments.ticker`.
 - Entrambi gli script sincronizzano in `instruments` il ticker e la descrizione del CSV tramite upsert. `tracker.py` esegue la sincronizzazione prima del ciclo dei prezzi; `backfill_history.py` sincronizza l'anagrafica e lo storico nella stessa transazione.
-- `get_etf_prices()` richiede tramite `yfinance` le chiusure giornaliere non rettificate (`auto_adjust=False`) dell'ultimo mese per `Ticker_yf` e restituisce le date effettive comunicate da Yahoo Finance. I prezzi grezzi sono necessari per l'adeguamento dei dividendi mostrato nella pagina.
-- `tracker.py` tratta separatamente gli errori durante il recupero di prezzi e dividendi da Yahoo Finance: registra l'errore, prova comunque a recuperare l'altro tipo di dato e continua con i ticker successivi. Un risultato vuoto non è un errore; gli errori di salvataggio sul database continuano invece a interrompere l'esecuzione.
+- `get_etf_prices()` richiede tramite `yfinance` le chiusure giornaliere non rettificate (`auto_adjust=False`) dell'ultimo mese per `Ticker_yf`; per `Ticker_EODHD`, `tracker.py` richiede a EODHD le chiusure dell'ultimo mese. Entrambe le sorgenti restituiscono le date effettive. I prezzi grezzi sono necessari per l'adeguamento dei dividendi mostrato nella pagina.
+- `tracker.py` tratta separatamente gli errori durante il recupero dei prezzi dalla sorgente selezionata e dei dividendi Yahoo: registra l'errore e continua con le altre elaborazioni e i ticker successivi. Un risultato vuoto non è un errore; gli errori di salvataggio sul database continuano invece a interrompere l'esecuzione.
 - `save_to_db()` verifica quali date recenti per ticker esistono già in `prices`: inserisce le date mancanti e aggiorna la quotazione odierna se disponibile. La finestra mensile consente di recuperare quotazioni aggiornate settimanalmente o pubblicate in ritardo, con la loro data effettiva; nei giorni senza nuove quotazioni non vengono creati record artificiali.
 - `save_to_db()` usa un upsert sulla tabella `prices`, con conflitto sulla coppia `(date, ticker)`; in caso di conflitto aggiorna `price`.
 - `get_etf_dividends()` legge la serie storica `Ticker.dividends` fornita da yfinance. `save_dividends_to_db()` salva gli eventi in `dividends` con upsert su `(date, ticker)`, aggiornando importi eventualmente corretti da Yahoo Finance.
+- `eodhd.py` usa l'endpoint EOD EODHD e il campo `close` per le chiusure giornaliere; richiede `EODHD_API_TOKEN` solo quando viene selezionata questa sorgente. Le richieste rispettano il limite del piano gratuito di 365 giorni. EODHD non viene usato per i dividendi; per i ticker senza Yahoo non vengono quindi raccolti dividendi.
 - All'avvio lo script verifica che `psycopg2` sia installato e che `DATABASE_URL` sia impostata; in caso contrario stampa un errore esplicito e termina con codice 1. `psycopg2-binary` è già dichiarato in `requirements.txt`. La connessione/cursore vengono chiusi solo nel percorso senza eccezioni.
-- `backfill_history.py` è uno script manuale separato: per ogni `Ticker_yf` usa `Ticker.history(start="2022-01-01", auto_adjust=False)` per i prezzi e `Ticker.dividends` per i dividendi, filtrando entrambi dal 1° gennaio 2022 incluso. Se per un ticker non trova prezzi validi, stampa un avviso, raccoglie comunque gli eventuali dividendi e continua con i ticker successivi. Salva le chiusure `Close` con le date effettive e i dividendi alle date fornite da Yahoo inserendo solo righe mancanti con `ON CONFLICT DO NOTHING`; non modifica prezzi o importi già presenti. Dopo aver elaborato i ticker sincronizza anagrafica, prezzi e dividendi disponibili in un'unica transazione.
+- `backfill_history.py` è uno script manuale separato: Yahoo scarica prezzi e dividendi dal 1° gennaio 2022; EODHD scarica il campo `close` entro la finestra gratuita di 365 giorni. Salva le date effettive inserendo solo righe mancanti con `ON CONFLICT DO NOTHING`; non modifica prezzi o importi già presenti. Dopo aver elaborato i ticker sincronizza anagrafica, prezzi e dividendi disponibili in un'unica transazione.
 - Entrambi gli script caricano `DATABASE_URL` dal file `.env` nella cartella del progetto tramite `python-dotenv`, senza sovrascrivere un valore già presente nell'ambiente. `.env` è escluso da Git; `.env.example` contiene solo un URI segnaposto.
 - `backup_supabase.py` usa `pg_dump` (strumento client PostgreSQL installato separatamente), risolto dal percorso configurato in `PG_DUMP_PATH` oppure dal `PATH`, per salvare schema e dati accessibili in un archivio custom con timestamp UTC sotto `backups/`. `PG_DUMP_PATH` può essere impostato nel `.env` del progetto con percorso assoluto o relativo alla cartella del progetto. La cartella `backups/` è esclusa da Git perché i dump possono contenere dati riservati; il backup è logico e non include impostazioni Supabase o ruoli globali del server.
 
@@ -68,7 +70,7 @@ La pagina usa anche `portfolios` (`id` intero identity, `name` univoco) e `portf
 - Trigger schedulato: cron `0 18 * * *` (tutti i giorni, 7 giorni su 7; non solo nei giorni feriali).
 - Trigger manuale: `workflow_dispatch`.
 - Runner: `ubuntu-latest`; versione Python fissata a `3.10`.
-- Il workflow installa `requirements.txt` ed espone `secrets.DATABASE_URL` allo script solo nel passo di esecuzione.
+- Il workflow installa `requirements.txt` ed espone `secrets.DATABASE_URL` e, se configurato, `secrets.EODHD_API_TOKEN` allo script solo nel passo di esecuzione.
 - `DATABASE_URL` deve essere l'URI PostgreSQL Supabase completo. Se la password contiene caratteri speciali, il README ricorda che vanno percent-encoded nell'URI.
 - `.github/workflows/pages.yml` pubblica su push a `main` o avvio manuale; l'artefatto contiene solo `index.html`. In GitHub Pages la sorgente va impostata su **GitHub Actions**.
 

@@ -1,11 +1,13 @@
 import importlib
 import math
 import os
+from datetime import date, timedelta
 from pathlib import Path
 
 import yfinance as yf
 from dotenv import load_dotenv
 
+from eodhd import EODHD_MAX_HISTORY_DAYS, get_eodhd_history
 from tracker import load_instruments, upsert_instruments
 
 load_dotenv(Path(__file__).with_name(".env"))
@@ -13,64 +15,89 @@ load_dotenv(Path(__file__).with_name(".env"))
 HISTORY_START_DATE = "2022-01-01"
 
 
-def get_ticker_history(ticker, yahoo_ticker):
-    print(f"Recupero storico per {ticker} ({yahoo_ticker})...")
-    yahoo_instrument = yf.Ticker(yahoo_ticker)
-    history = yahoo_instrument.history(
-        start=HISTORY_START_DATE,
-        auto_adjust=False,
-    )
+def get_ticker_history(ticker, yahoo_ticker, eodhd_ticker):
+    source_ticker = yahoo_ticker or eodhd_ticker
+    print(f"Recupero storico per {ticker} ({source_ticker})...")
     rows = []
-    if history.empty:
-        print(
-            f"Avviso: nessun dato storico dei prezzi trovato per "
-            f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
+    dividend_rows = []
+    if yahoo_ticker:
+        yahoo_instrument = yf.Ticker(yahoo_ticker)
+        history = yahoo_instrument.history(
+            start=HISTORY_START_DATE,
+            auto_adjust=False,
         )
-    elif "Close" not in history.columns:
-        print(
-            f"Avviso: la colonna 'Close' manca nello storico di "
-            f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
-        )
-    else:
-        close_prices = history["Close"].dropna()
-        if close_prices.empty:
+        if history.empty:
             print(
-                f"Avviso: nessun prezzo di chiusura valido trovato per "
+                f"Avviso: nessun dato storico dei prezzi trovato per "
+                f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
+            )
+        elif "Close" not in history.columns:
+            print(
+                f"Avviso: la colonna 'Close' manca nello storico di "
                 f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
             )
         else:
-            for session_date, close_price in close_prices.items():
-                date_str = session_date.strftime("%Y-%m-%d")
-                if date_str < HISTORY_START_DATE:
-                    continue
+            close_prices = history["Close"].dropna()
+            if close_prices.empty:
+                print(
+                    f"Avviso: nessun prezzo di chiusura valido trovato per "
+                    f"{yahoo_ticker}; continuo con dividendi e ticker successivi."
+                )
+            else:
+                for session_date, close_price in close_prices.items():
+                    date_str = session_date.strftime("%Y-%m-%d")
+                    if date_str < HISTORY_START_DATE:
+                        continue
 
-                price = float(close_price)
-                if not math.isfinite(price):
-                    raise ValueError(
-                        f"Prezzo non valido nello storico di {yahoo_ticker}"
-                    )
-                rows.append((date_str, ticker, price))
+                    price = float(close_price)
+                    if not math.isfinite(price):
+                        raise ValueError(
+                            f"Prezzo non valido nello storico di {yahoo_ticker}"
+                        )
+                    rows.append((date_str, ticker, price))
 
+            if not rows:
+                print(
+                    f"Avviso: nessun prezzo di chiusura disponibile per "
+                    f"{ticker} ({yahoo_ticker}) dal {HISTORY_START_DATE}; "
+                    "continuo con dividendi e ticker successivi."
+                )
+
+        for event_date, amount in yahoo_instrument.dividends.items():
+            event_date_str = event_date.strftime("%Y-%m-%d")
+            if event_date_str < HISTORY_START_DATE:
+                continue
+
+            amount = float(amount)
+            if not math.isfinite(amount) or amount <= 0:
+                raise ValueError(
+                    f"Importo del dividendo non valido per {yahoo_ticker} "
+                    f"alla data {event_date_str}"
+                )
+            dividend_rows.append((event_date_str, ticker, amount))
+    else:
+        today = date.today()
+        start_date = max(
+            date.fromisoformat(HISTORY_START_DATE),
+            today - timedelta(days=EODHD_MAX_HISTORY_DAYS),
+        )
+        if start_date > date.fromisoformat(HISTORY_START_DATE):
+            print(
+                f"EODHD: storico limitato agli ultimi "
+                f"{EODHD_MAX_HISTORY_DAYS} giorni, dal {start_date}."
+            )
+        eodhd_prices = get_eodhd_history(
+            eodhd_ticker, start_date.isoformat(), today.isoformat()
+        )
+        rows = [
+            (date_str, ticker, price)
+            for date_str, price in eodhd_prices
+        ]
         if not rows:
             print(
                 f"Avviso: nessun prezzo di chiusura disponibile per "
-                f"{ticker} ({yahoo_ticker}) dal {HISTORY_START_DATE}; "
-                "continuo con dividendi e ticker successivi."
+                f"{ticker} ({eodhd_ticker}); continuo con i ticker successivi."
             )
-
-    dividend_rows = []
-    for event_date, amount in yahoo_instrument.dividends.items():
-        event_date_str = event_date.strftime("%Y-%m-%d")
-        if event_date_str < HISTORY_START_DATE:
-            continue
-
-        amount = float(amount)
-        if not math.isfinite(amount) or amount <= 0:
-            raise ValueError(
-                f"Importo del dividendo non valido per {yahoo_ticker} "
-                f"alla data {event_date_str}"
-            )
-        dividend_rows.append((event_date_str, ticker, amount))
 
     if rows:
         print(
@@ -130,8 +157,10 @@ def main():
     instruments = load_instruments()
     price_rows = []
     dividend_rows = []
-    for ticker, yahoo_ticker, _ in instruments:
-        ticker_prices, ticker_dividends = get_ticker_history(ticker, yahoo_ticker)
+    for ticker, yahoo_ticker, eodhd_ticker, _ in instruments:
+        ticker_prices, ticker_dividends = get_ticker_history(
+            ticker, yahoo_ticker, eodhd_ticker
+        )
         price_rows.extend(ticker_prices)
         dividend_rows.extend(ticker_dividends)
 

@@ -2,11 +2,13 @@ import csv
 import importlib
 import math
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import yfinance as yf
 from dotenv import load_dotenv
+
+from eodhd import get_eodhd_history
 
 PRICE_HISTORY_PERIOD = "1mo"
 
@@ -31,7 +33,12 @@ def load_instruments():
     anagrafica_path = Path(__file__).with_name("Anagrafica.csv")
     with anagrafica_path.open(encoding="utf-8-sig", newline="") as csv_file:
         reader = csv.DictReader(csv_file, delimiter=";")
-        required_columns = {"Ticker", "Ticker_yf", "Descrizione"}
+        required_columns = {
+            "Ticker",
+            "Ticker_yf",
+            "Ticker_EODHD",
+            "Descrizione",
+        }
         if reader.fieldnames is None or not required_columns.issubset(reader.fieldnames):
             missing_columns = required_columns - set(reader.fieldnames or [])
             raise ValueError(
@@ -44,13 +51,15 @@ def load_instruments():
         for row_number, row in enumerate(reader, start=2):
             ticker = (row.get("Ticker") or "").strip()
             yahoo_ticker = (row.get("Ticker_yf") or "").strip()
+            eodhd_ticker = (row.get("Ticker_EODHD") or "").strip()
             if not ticker:
                 raise ValueError(
                     f"Ticker vuoto in Anagrafica.csv alla riga {row_number}"
                 )
-            if not yahoo_ticker:
+            if not yahoo_ticker and not eodhd_ticker:
                 raise ValueError(
-                    f"Ticker_yf vuoto in Anagrafica.csv alla riga {row_number}"
+                    f"Ticker_yf e Ticker_EODHD vuoti in Anagrafica.csv "
+                    f"alla riga {row_number}"
                 )
             if ticker in seen_tickers:
                 raise ValueError(
@@ -59,7 +68,9 @@ def load_instruments():
                 )
             seen_tickers.add(ticker)
             description = (row.get("Descrizione") or "").strip() or None
-            instruments.append((ticker, yahoo_ticker, description))
+            instruments.append(
+                (ticker, yahoo_ticker, eodhd_ticker, description)
+            )
 
     if not instruments:
         raise ValueError("Anagrafica.csv non contiene ticker da elaborare")
@@ -75,7 +86,10 @@ def upsert_instruments(cursor, instruments):
     """
     cursor.executemany(
         query,
-        [(ticker, description) for ticker, _, description in instruments],
+        [
+            (ticker, description)
+            for ticker, _, _, description in instruments
+        ],
     )
 
 
@@ -135,6 +149,21 @@ def get_etf_dividends(yahoo_ticker):
             )
         rows.append((event_date.strftime("%Y-%m-%d"), amount))
     return rows
+
+
+def get_eodhd_prices(eodhd_ticker):
+    print(f"Recupero dati per {eodhd_ticker} da EODHD...")
+    end_date = date.today()
+    start_date = end_date - timedelta(days=30)
+    prices = get_eodhd_history(
+        eodhd_ticker, start_date.isoformat(), end_date.isoformat()
+    )
+    if not prices:
+        print(
+            f"Nessuna quotazione disponibile negli ultimi "
+            f"{PRICE_HISTORY_PERIOD} per {eodhd_ticker}; salto."
+        )
+    return prices
 
 
 def select_prices_to_save(prices, existing_dates, today_date):
@@ -224,29 +253,39 @@ def save_dividends_to_db(dividends, ticker, db_driver):
     print(f"Salvati {len(dividends)} dividendi per {ticker}.")
 
 
-def process_instrument(ticker, yahoo_ticker, db_driver):
+def process_instrument(ticker, yahoo_ticker, eodhd_ticker, db_driver):
     try:
-        prices = get_etf_prices(yahoo_ticker)
+        if yahoo_ticker:
+            prices = get_etf_prices(yahoo_ticker)
+        else:
+            prices = get_eodhd_prices(eodhd_ticker)
     except Exception as error:
+        source_ticker = yahoo_ticker or eodhd_ticker
         print(
             f"Errore durante il recupero delle quotazioni per "
-            f"{yahoo_ticker} ({ticker}): {error}. "
-            "Continuo con i dividendi e con i ticker successivi."
+            f"{source_ticker} ({ticker}): {error}. "
+            "Continuo con le altre elaborazioni e con i ticker successivi."
         )
     else:
         if prices is not None:
             save_to_db(prices, ticker, db_driver)
 
-    try:
-        dividends = get_etf_dividends(yahoo_ticker)
-    except Exception as error:
-        print(
-            f"Errore durante il recupero dei dividendi per "
-            f"{yahoo_ticker} ({ticker}): {error}. "
-            "Continuo con i ticker successivi."
-        )
+    if yahoo_ticker:
+        try:
+            dividends = get_etf_dividends(yahoo_ticker)
+        except Exception as error:
+            print(
+                f"Errore durante il recupero dei dividendi per "
+                f"{yahoo_ticker} ({ticker}): {error}. "
+                "Continuo con i ticker successivi."
+            )
+        else:
+            save_dividends_to_db(dividends, ticker, db_driver)
     else:
-        save_dividends_to_db(dividends, ticker, db_driver)
+        print(
+            f"Nessun recupero dividendi configurato per {ticker} "
+            "(sorgente EODHD)."
+        )
 
 
 if __name__ == "__main__":
@@ -260,8 +299,10 @@ if __name__ == "__main__":
         instruments = load_instruments()
         sync_instruments_to_db(instruments, db_driver)
 
-        for ticker, yahoo_ticker, _ in instruments:
-            process_instrument(ticker, yahoo_ticker, db_driver)
+        for ticker, yahoo_ticker, eodhd_ticker, _ in instruments:
+            process_instrument(
+                ticker, yahoo_ticker, eodhd_ticker, db_driver
+            )
     except Exception as e:
         print(f"Errore durante l'esecuzione: {e}")
         raise SystemExit(1) from e

@@ -33,7 +33,7 @@ create table dividends (
 );
 ```
 
-La tabella `instruments` contiene il ticker canonico e la descrizione; `prices.ticker`, `dividends.ticker` e `portfolio_positions.ticker` lo usano come chiave esterna. `dividends` memorizza l'importo per azione e la data dell'evento riportata da Yahoo Finance, non l'incasso personale né necessariamente la data di pagamento. Gli script mantengono `Anagrafica.csv` come fonte dell'anagrafica: usano `Ticker_yf` per interrogare Yahoo Finance e salvano `Ticker` nel database. `backfill_history.py` inizializza/aggiorna `instruments` insieme allo storico; il job giornaliero sincronizza le descrizioni prima di salvare prezzi e dividendi. Mantieni il CSV nella stessa cartella degli script e includilo nel repository, così sarà disponibile anche in GitHub Actions.
+La tabella `instruments` contiene il ticker canonico e la descrizione; `prices.ticker`, `dividends.ticker` e `portfolio_positions.ticker` lo usano come chiave esterna. `dividends` memorizza l'importo per azione e la data dell'evento riportata da Yahoo Finance, non l'incasso personale né necessariamente la data di pagamento. Gli script mantengono `Anagrafica.csv` come fonte dell'anagrafica: se `Ticker_yf` è valorizzato interrogano Yahoo Finance, altrimenti usano `Ticker_EODHD` per recuperare le chiusure EODHD. `Ticker` è il ticker canonico salvato nel database. EODHD non viene usato per i dividendi. `backfill_history.py` inizializza/aggiorna `instruments` insieme allo storico; il job giornaliero sincronizza le descrizioni prima di salvare prezzi e dividendi. Mantieni il CSV nella stessa cartella degli script e includilo nel repository, così sarà disponibile anche in GitHub Actions.
 
 
 Per aggiungere la gestione dei portafogli, esegui anche questo SQL nel SQL Editor. Su un database che contiene già `instruments` e `prices`, esegui solo questo blocco aggiuntivo, senza ricreare le tabelle esistenti:
@@ -53,14 +53,6 @@ create table public.portfolio_positions (
     average_purchase_price numeric(20, 8) check (average_purchase_price > 0),
     primary key (portfolio_id, ticker)
 );
-```
-
-Se `portfolio_positions` esiste già, aggiungi la colonna del prezzo medio di acquisto con:
-
-```sql
-alter table public.portfolio_positions
-    add column average_purchase_price numeric(20, 8)
-    check (average_purchase_price > 0);
 ```
 
 `portfolios` contiene un record per portafoglio, identificato da un ID intero assegnato automaticamente; `portfolio_positions` contiene una riga per ticker e portafoglio, con quantità posseduta e prezzo medio di acquisto. La chiave primaria composta impedisce duplicati dello stesso ticker nel portafoglio. Per aggiungere più titoli dello stesso ticker, aggiorna la quantità e il prezzo medio della riga esistente. `quantity` accetta frazioni di titolo; `average_purchase_price` è facoltativo e deve essere positivo: finché non è valorizzato, la variazione rispetto all'acquisto non viene mostrata. Se usi esclusivamente titoli interi, puoi sostituire `quantity` con `integer`. Le due tabelle non includono date di creazione, non necessarie alla pagina.
@@ -146,6 +138,10 @@ Attenzione
 Special symbols in passwords#
 If you use special symbols in your Postgres password, you must remember to [percent-encode](https://en.wikipedia.org/wiki/Percent-encoding) your password later if using the Postgres connection string, for example, postgresql://postgres.projectref:p%3Dword@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 
+
+Se usi EODHD, crea anche il secret `EODHD_API_TOKEN` e inserisci il token API del tuo account. È necessario solo per le righe con `Ticker_yf` vuoto e `Ticker_EODHD` valorizzato.
+
+
 ## Passo 5: Creare l'automazione (GitHub Action)
 Ora diciamo a GitHub quando far girare lo script. Il workflow pianifica l'esecuzione ogni giorno alle 18:00 UTC, weekend inclusi, e consente anche l'avvio manuale. Creeremo una cartella e un file di configurazione.
 Torna nella pagina principale del tuo repository e clicca su "Add file" > "Create new file".
@@ -183,9 +179,9 @@ notepad .env
 python tracker.py
 ```
 
-Nel file `.env`, sostituisci l'URI di esempio con la connection string del tuo database. Salva `.env` nella cartella del progetto: entrambi gli script lo caricano automaticamente e il file è escluso da Git. Non pubblicare né condividere questo file. Se `DATABASE_URL` è già definita nell'ambiente di Windows, ha la precedenza sul valore in `.env`. Se `psycopg2` manca, installa le dipendenze con il comando indicato sopra. Il file `Anagrafica.csv` deve rimanere nella stessa cartella degli script.
+Nel file `.env`, sostituisci l'URI di esempio con la connection string del tuo database. Per usare EODHD imposta anche `EODHD_API_TOKEN` con il token del tuo account. Salva `.env` nella cartella del progetto: entrambi gli script lo caricano automaticamente e il file è escluso da Git. Non pubblicare né condividere questo file. Se `DATABASE_URL` o `EODHD_API_TOKEN` sono già definite nell'ambiente di Windows, hanno la precedenza sui valori in `.env`. Se `psycopg2` manca, installa le dipendenze con il comando indicato sopra. Il file `Anagrafica.csv` deve rimanere nella stessa cartella degli script.
 
-Il job giornaliero legge da Yahoo Finance le quotazioni dell'ultimo mese e lo storico dei dividendi disponibile per ciascun ticker. Salva ogni seduta recente non ancora presente nel database usando la data effettiva fornita da Yahoo Finance; questa finestra consente di recuperare anche prezzi aggiornati settimanalmente o pubblicati in ritardo, senza assegnarli al giorno sbagliato. La quotazione odierna, se disponibile, viene aggiornata anche se esiste già; nei giorni senza nuove quotazioni non vengono creati record artificiali. Gli eventi dividendo sono salvati tramite upsert su `(date, ticker)`, quindi riesecuzioni e correzioni dell'importo non creano duplicati.
+Il job giornaliero legge da Yahoo Finance le quotazioni dell'ultimo mese e lo storico dei dividendi per i ticker con `Ticker_yf`; se `Ticker_yf` è vuoto, legge da EODHD le chiusure dell'ultimo mese tramite `Ticker_EODHD` (serve `EODHD_API_TOKEN`). Salva ogni seduta recente non ancora presente nel database usando la data effettiva fornita dalla sorgente; questa finestra consente di recuperare anche prezzi aggiornati settimanalmente o pubblicati in ritardo, senza assegnarli al giorno sbagliato. La quotazione odierna, se disponibile, viene aggiornata anche se esiste già; nei giorni senza nuove quotazioni non vengono creati record artificiali. Gli eventi dividendo Yahoo sono salvati tramite upsert su `(date, ticker)`, quindi riesecuzioni e correzioni dell'importo non creano duplicati.
 
 ### Backup del database Supabase
 
@@ -211,6 +207,6 @@ Per popolare `prices` con lo storico dei prezzi dal 1° gennaio 2022 e `dividend
 python backfill_history.py
 ```
 
-Lo script scarica le chiusure e i dividendi da Yahoo Finance dal 1° gennaio 2022 incluso, usando `Ticker_yf`; salva `Ticker` come identificativo canonico e sincronizza ticker e descrizioni del CSV in `instruments`. I dividendi sono importi per azione alle date indicate da Yahoo Finance, non una ricostruzione degli incassi del portafoglio. Se per un ticker non sono disponibili prezzi, lo script mostra un avviso, continua a raccogliere eventuali dividendi e passa al ticker successivo. Prima di scrivere nel database verifica i dati raccolti; poi salva anagrafica, prezzi e dividendi disponibili in un'unica transazione. Per prezzi e dividendi inserisce solo le date mancanti e lascia invariati i record già presenti. Le chiavi univoche consentono di rilanciarlo senza creare duplicati. Richiede le stesse dipendenze e la stessa variabile `DATABASE_URL` dello script giornaliero.
+Lo script scarica le chiusure e i dividendi da Yahoo Finance dal 1° gennaio 2022 incluso, usando `Ticker_yf`. Se questo campo è vuoto, scarica da EODHD le chiusure (`close`) tramite `Ticker_EODHD`, nei limiti del piano gratuito (massimo 365 giorni); per questa sorgente è necessario `EODHD_API_TOKEN` in `.env`. EODHD non viene usato per i dividendi. Lo script salva `Ticker` come identificativo canonico e sincronizza ticker e descrizioni del CSV in `instruments`. I dividendi Yahoo sono importi per azione alle date indicate, non una ricostruzione degli incassi del portafoglio. Se per un ticker non sono disponibili prezzi, lo script mostra un avviso e passa al ticker successivo. Prima di scrivere nel database verifica i dati raccolti; poi salva anagrafica, prezzi e dividendi disponibili in un'unica transazione. Per prezzi e dividendi inserisce solo le date mancanti e lascia invariati i record già presenti. Le chiavi univoche consentono di rilanciarlo senza creare duplicati. Richiede le stesse dipendenze e `DATABASE_URL` dello script giornaliero.
 
 Per verificare che la variabile sia caricata puoi eseguire `$env:DATABASE_URL` in PowerShell; il valore salvato nel file locale viene letto all'avvio degli script.

@@ -27,5 +27,6 @@ jobs:
       - name: Run script
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EODHD_API_TOKEN: ${{ secrets.EODHD_API_TOKEN }}
         run: |
           python tracker.py
