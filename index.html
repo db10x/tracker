@@ -391,6 +391,43 @@
         .dividend-tooltip-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
 
         .assets-panel { padding: 0; overflow: hidden; }
+        .assets-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .assets-title { color: var(--text); font-size: 11px; font-weight: 700; }
+        .expand-table-button {
+            min-height: 30px;
+            padding: 0 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface-raised);
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: border-color .16s ease, color .16s ease, background .16s ease;
+        }
+
+        .expand-table-button:hover {
+            border-color: rgba(56, 189, 248, .5);
+            color: var(--accent);
+        }
+
+        .assets-table-scroll {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
         .assets-subheading {
             display: grid;
             grid-template-columns: minmax(0, 1fr) 82px 64px 78px;
@@ -402,6 +439,8 @@
             letter-spacing: .1em;
             text-transform: uppercase;
         }
+
+        .expanded-only { display: none; }
 
         .sort-button {
             min-width: 0;
@@ -422,8 +461,12 @@
             color: var(--accent);
         }
 
+        .assets-subheading .sort-button { white-space: normal; line-height: 1.25; }
+
         .sort-button[data-sort="price"], .sort-button[data-sort="variation"],
-        .sort-button[data-sort="purchaseVariation"] { text-align: right; }
+        .sort-button[data-sort="purchaseVariation"], .sort-button[data-sort="latestDate"],
+        .sort-button[data-sort="marketValue"], .sort-button[data-sort="dailyChange"],
+        .sort-button[data-sort="purchaseChange"] { text-align: right; }
         .sort-indicator { display: inline-block; margin-left: 2px; }
 
         #asset-list { flex: 1; overflow: auto; }
@@ -469,7 +512,47 @@
         .asset-price { grid-column: 2; grid-row: 1; }
         .asset-variation { grid-column: 3; grid-row: 1; }
         .asset-purchase-variation { grid-column: 4; grid-row: 1; }
+        .asset-date, .asset-market-value, .asset-daily-change-percent, .asset-daily-change,
+        .asset-total-change-percent, .asset-total-change {
+            color: var(--text);
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 10px;
+            font-weight: 600;
+            text-align: right;
+            white-space: nowrap;
+        }
         .asset-metrics { grid-column: 1 / -1; grid-row: 2; margin-left: 17px; color: var(--faint); font-family: "SFMono-Regular", Consolas, monospace; font-size: 9px; line-height: 1.2; }
+
+        .dashboard-grid.is-assets-expanded { grid-template-columns: minmax(0, 1fr); }
+        .dashboard-grid.is-assets-expanded .chart-panel { display: none; }
+        .dashboard-grid.is-assets-expanded .assets-subheading,
+        .dashboard-grid.is-assets-expanded .asset-row {
+            min-width: 990px;
+            grid-template-columns: minmax(220px, 2fr) repeat(7, minmax(110px, 1fr));
+        }
+
+        .dashboard-grid.is-assets-expanded .assets-table-scroll { overflow: auto; }
+        .dashboard-grid.is-assets-expanded .assets-subheading {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--surface-raised);
+        }
+
+        .dashboard-grid.is-assets-expanded #asset-list { flex: none; overflow: visible; }
+        .dashboard-grid.is-assets-expanded .expanded-only { display: block; }
+        .dashboard-grid.is-assets-expanded .compact-only { display: none; }
+        .dashboard-grid.is-assets-expanded .asset-date { grid-column: 3; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-market-value { grid-column: 4; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-daily-change-percent { grid-column: 5; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-daily-change { grid-column: 6; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-total-change-percent { grid-column: 7; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-total-change { grid-column: 8; grid-row: 1; }
+
+        body.assets-expanded main {
+            width: calc(100% - 48px);
+            max-width: none;
+        }
 
         .variation-positive { color: var(--positive) !important; }
         .variation-negative { color: var(--negative) !important; }
@@ -502,6 +585,7 @@
 
         @media (max-width: 600px) {
             .header-inner, main { width: min(100% - 28px, 1540px); }
+            body.assets-expanded main { width: calc(100% - 28px); }
             .header-inner { min-height: 54px; gap: 8px; }
             .brand-caption { display: none; }
             .brand-mark { width: 32px; height: 32px; }
@@ -627,7 +711,7 @@
     </header>
 
     <main>
-        <div class="dashboard-grid">
+        <div id="dashboard-grid" class="dashboard-grid">
             <section class="panel chart-panel" aria-label="Grafico storico dei titoli">
                 <div class="chart-toolbar">
                     <div class="toolbar-group" role="group" aria-label="Intervallo del grafico">
@@ -668,14 +752,27 @@
             </section>
 
             <section class="panel assets-panel" aria-label="Titoli del portafoglio">
-                <div class="assets-subheading" role="row">
-                    <button class="sort-button" type="button" data-sort="ticker" aria-sort="ascending">Ticker<span class="sort-indicator" aria-hidden="true">↑</span></button>
-                    <button class="sort-button" type="button" data-sort="price" aria-sort="none">Prezzo<span class="sort-indicator" aria-hidden="true"></span></button>
-                    <button class="sort-button" type="button" data-sort="variation" aria-sort="none">Var. %<span class="sort-indicator" aria-hidden="true"></span></button>
-                    <button class="sort-button" type="button" data-sort="purchaseVariation" aria-sort="none" title="Variazione rispetto al prezzo medio di acquisto">Acq. %<span class="sort-indicator" aria-hidden="true"></span></button>
+                <div class="assets-toolbar">
+                    <span class="assets-title">Posizioni</span>
+                    <button id="toggle-table-expanded" class="expand-table-button" type="button"
+                        aria-controls="dashboard-grid" aria-pressed="false">Espandi tabella</button>
                 </div>
-                <div id="asset-list" aria-label="Titoli nel portafoglio">
-                    <p class="section-description" style="padding:18px">Caricamento dei dati…</p>
+                <div class="assets-table-scroll">
+                    <div class="assets-subheading" role="row">
+                        <button class="sort-button" type="button" data-sort="ticker" aria-sort="ascending">Ticker<span class="sort-indicator" aria-hidden="true">↑</span></button>
+                        <button class="sort-button" type="button" data-sort="price" aria-sort="none">Prezzo<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button compact-only" type="button" data-sort="variation" aria-sort="none">P/L giornaliero [%]<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button compact-only" type="button" data-sort="purchaseVariation" aria-sort="none" title="Variazione rispetto al prezzo medio di acquisto">P/L totale [%]<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button expanded-only" type="button" data-sort="latestDate" aria-sort="none">Data<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button expanded-only" type="button" data-sort="marketValue" aria-sort="none" title="Prezzo moltiplicato per la quantità">Valore di mercato<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button expanded-only" type="button" data-sort="variation" aria-sort="none">P/L giornaliero [%]<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button expanded-only" type="button" data-sort="dailyChange" aria-sort="none">P/L giornaliero [€]<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button expanded-only" type="button" data-sort="purchaseVariation" aria-sort="none">P/L totale [%]<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button expanded-only" type="button" data-sort="purchaseChange" aria-sort="none">P/L totale [€]<span class="sort-indicator" aria-hidden="true"></span></button>
+                    </div>
+                    <div id="asset-list" aria-label="Titoli nel portafoglio">
+                        <p class="section-description" style="padding:18px">Caricamento dei dati…</p>
+                    </div>
                 </div>
             </section>
         </div>
@@ -1023,6 +1120,7 @@
                     return {
                         ticker,
                         description: latest?.description || '',
+                        latestDate: latest?.date || null,
                         quantity,
                         price: Number.isFinite(price) ? price : null,
                         variation,
@@ -1055,7 +1153,9 @@
                 }
                 const comparison = summarySort.key === 'ticker'
                     ? String(left).localeCompare(String(right), 'it')
-                    : left - right;
+                    : summarySort.key === 'latestDate'
+                        ? String(left).localeCompare(String(right))
+                        : left - right;
                 return comparison * (summarySort.direction === 'asc' ? 1 : -1);
             });
             sortedSummaries.forEach(summary => {
@@ -1069,7 +1169,7 @@
                 button.disabled = !Number.isFinite(summary.price);
                 button.setAttribute('aria-pressed', String(selectedTickers.has(summary.ticker)));
                 button.setAttribute('aria-label',
-                    `${summary.ticker}, ${summary.description || 'nessuna descrizione'}, ${Number.isFinite(summary.price) ? `${numberFormat.format(summary.price)} euro` : 'nessun prezzo'}, variazione rispetto all'acquisto ${summary.purchaseVariation === null ? 'non disponibile' : `${numberFormat.format(summary.purchaseVariation)} percento`}, ${selectedTickers.has(summary.ticker) ? 'visibile nel grafico' : 'non visibile nel grafico'}`);
+                    `${summary.ticker}, ${summary.description || 'nessuna descrizione'}, ${Number.isFinite(summary.price) ? `${numberFormat.format(summary.price)} euro` : 'nessun prezzo'}, valore di mercato ${Number.isFinite(summary.marketValue) ? `${numberFormat.format(summary.marketValue)} euro` : 'non disponibile'}, P/L giornaliero ${Number.isFinite(summary.dailyChange) ? formatSignedCurrency(summary.dailyChange) : 'non disponibile'}, P/L totale ${Number.isFinite(summary.purchaseChange) ? formatSignedCurrency(summary.purchaseChange) : 'non disponibile'}, variazione rispetto all'acquisto ${summary.purchaseVariation === null ? 'non disponibile' : `${numberFormat.format(summary.purchaseVariation)} percento`}, ${selectedTickers.has(summary.ticker) ? 'visibile nel grafico' : 'non visibile nel grafico'}`);
                 if (selectedTickers.has(summary.ticker)) button.classList.add('is-active');
 
                 const main = document.createElement('span');
@@ -1095,7 +1195,7 @@
                     ? `${numberFormat.format(summary.price)} €`
                     : '—';
                 const variation = document.createElement('span');
-                variation.className = 'asset-variation';
+                variation.className = 'asset-variation compact-only';
                 if (summary.variation === null) {
                     variation.textContent = '—';
                 } else {
@@ -1104,7 +1204,7 @@
                     if (summary.variation < 0) variation.classList.add('variation-negative');
                 }
                 const purchaseVariation = document.createElement('span');
-                purchaseVariation.className = 'asset-purchase-variation';
+                purchaseVariation.className = 'asset-purchase-variation compact-only';
                 if (summary.purchaseVariation === null) {
                     purchaseVariation.textContent = '—';
                 } else {
@@ -1114,16 +1214,77 @@
                 }
                 main.append(identity, price);
 
+                const latestDate = document.createElement('span');
+                latestDate.className = 'asset-date expanded-only';
+                latestDate.textContent = summary.latestDate
+                    ? new Date(`${summary.latestDate}T00:00:00`).toLocaleDateString('it-IT')
+                    : '—';
+                const marketValue = createCurrencyCell('asset-market-value expanded-only', summary.marketValue);
+                const dailyChangePercent = createPercentageCell(
+                    'asset-daily-change-percent expanded-only',
+                    summary.variation
+                );
+                const dailyChange = createCurrencyCell('asset-daily-change expanded-only', summary.dailyChange, true);
+                const totalChangePercent = createPercentageCell(
+                    'asset-total-change-percent expanded-only',
+                    summary.purchaseVariation
+                );
+                const totalChange = createCurrencyCell('asset-total-change expanded-only', summary.purchaseChange, true);
                 const metrics = document.createElement('span');
                 metrics.className = 'asset-metrics';
                 const quantity = document.createElement('span');
                 quantity.textContent = `Quantità ${new Intl.NumberFormat('it-IT', { maximumFractionDigits: 8 }).format(summary.quantity)}`;
                 metrics.append(quantity);
-                button.append(main, variation, purchaseVariation, metrics);
+                button.append(
+                    main,
+                    variation,
+                    purchaseVariation,
+                    latestDate,
+                    marketValue,
+                    dailyChangePercent,
+                    dailyChange,
+                    totalChangePercent,
+                    totalChange,
+                    metrics
+                );
                 button.addEventListener('click', () => toggleTicker(summary.ticker));
                 list.appendChild(button);
             });
         }
+
+        function createCurrencyCell(className, value, signed = false) {
+            const cell = document.createElement('span');
+            cell.className = className;
+            cell.textContent = Number.isFinite(value)
+                ? (signed ? formatSignedCurrency(value) : `${numberFormat.format(value)} €`)
+                : '—';
+            if (signed && Number.isFinite(value)) {
+                if (value > 0) cell.classList.add('variation-positive');
+                if (value < 0) cell.classList.add('variation-negative');
+            }
+            return cell;
+        }
+
+        function createPercentageCell(className, value) {
+            const cell = document.createElement('span');
+            cell.className = className;
+            cell.textContent = Number.isFinite(value)
+                ? `${value > 0 ? '+' : ''}${numberFormat.format(value)}%`
+                : '—';
+            if (Number.isFinite(value) && value > 0) cell.classList.add('variation-positive');
+            if (Number.isFinite(value) && value < 0) cell.classList.add('variation-negative');
+            return cell;
+        }
+
+        document.getElementById('toggle-table-expanded').addEventListener('click', event => {
+            const button = event.currentTarget;
+            const expanded = button.getAttribute('aria-pressed') !== 'true';
+            button.setAttribute('aria-pressed', String(expanded));
+            button.textContent = expanded ? 'Mostra grafico' : 'Espandi tabella';
+            document.body.classList.toggle('assets-expanded', expanded);
+            document.querySelector('.dashboard-grid').classList.toggle('is-assets-expanded', expanded);
+            if (!expanded && chartInstance) chartInstance.resize();
+        });
 
         document.querySelectorAll('[data-sort]').forEach(button => {
             button.addEventListener('click', () => {
