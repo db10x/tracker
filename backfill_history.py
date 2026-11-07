@@ -8,15 +8,17 @@ import yfinance as yf
 from dotenv import load_dotenv
 
 from eodhd import EODHD_MAX_HISTORY_DAYS, get_eodhd_history
-from tracker import load_instruments, upsert_instruments
+from instruments_db import load_instruments
+from simpletools_prices import SimpleToolsClient
 
 load_dotenv(Path(__file__).with_name(".env"))
 
 HISTORY_START_DATE = "2022-01-01"
+SIMPLETOOLS_CLIENT = SimpleToolsClient()
 
 
-def get_ticker_history(ticker, yahoo_ticker, eodhd_ticker):
-    source_ticker = yahoo_ticker or eodhd_ticker
+def get_ticker_history(ticker, yahoo_ticker, eodhd_ticker, stfi_isin, tipo):
+    source_ticker = yahoo_ticker or eodhd_ticker or stfi_isin
     print(f"Recupero storico per {ticker} ({source_ticker})...")
     rows = []
     dividend_rows = []
@@ -75,7 +77,7 @@ def get_ticker_history(ticker, yahoo_ticker, eodhd_ticker):
                     f"alla data {event_date_str}"
                 )
             dividend_rows.append((event_date_str, ticker, amount))
-    else:
+    elif eodhd_ticker:
         today = date.today()
         start_date = max(
             date.fromisoformat(HISTORY_START_DATE),
@@ -98,6 +100,27 @@ def get_ticker_history(ticker, yahoo_ticker, eodhd_ticker):
                 f"Avviso: nessun prezzo di chiusura disponibile per "
                 f"{ticker} ({eodhd_ticker}); continuo con i ticker successivi."
             )
+    else:
+        simpletools_prices = SIMPLETOOLS_CLIENT.fetch_history(stfi_isin)
+        rows = [
+            (date_str, ticker, price)
+            for date_str, price in simpletools_prices
+            if date_str >= HISTORY_START_DATE
+        ]
+        if tipo and tipo.strip().lower() == "bond":
+            simpletools_dividends = SIMPLETOOLS_CLIENT.fetch_dividends(
+                stfi_isin, HISTORY_START_DATE
+            )
+            dividend_rows.extend(
+                (event_date, ticker, amount)
+                for event_date, amount in simpletools_dividends
+            )
+        if not rows:
+            print(
+                f"Avviso: nessun prezzo storico disponibile per "
+                f"{ticker} (ISIN {stfi_isin}) dal {HISTORY_START_DATE}; "
+                "continuo con i ticker successivi."
+            )
 
     if rows:
         print(
@@ -111,7 +134,7 @@ def get_ticker_history(ticker, yahoo_ticker, eodhd_ticker):
 
 
 def save_history_to_db(
-    price_rows, dividend_rows, instruments, database_url, db_driver
+    price_rows, dividend_rows, database_url, db_driver
 ):
     execute_values = importlib.import_module("psycopg2.extras").execute_values
     price_query = """
@@ -131,7 +154,6 @@ def save_history_to_db(
     try:
         with connection:
             with connection.cursor() as cursor:
-                upsert_instruments(cursor, instruments)
                 if price_rows:
                     execute_values(
                         cursor, price_query, price_rows, page_size=1000
@@ -154,19 +176,19 @@ def main():
     if not database_url:
         raise ValueError("La variabile d'ambiente DATABASE_URL non è impostata.")
 
-    instruments = load_instruments()
+    db_driver = importlib.import_module("psycopg2")
+    instruments = load_instruments(database_url, db_driver)
     price_rows = []
     dividend_rows = []
-    for ticker, yahoo_ticker, eodhd_ticker, _ in instruments:
+    for ticker, yahoo_ticker, eodhd_ticker, stfi_isin, _, tipo in instruments:
         ticker_prices, ticker_dividends = get_ticker_history(
-            ticker, yahoo_ticker, eodhd_ticker
+            ticker, yahoo_ticker, eodhd_ticker, stfi_isin, tipo
         )
         price_rows.extend(ticker_prices)
         dividend_rows.extend(ticker_dividends)
 
-    db_driver = importlib.import_module("psycopg2")
     save_history_to_db(
-        price_rows, dividend_rows, instruments, database_url, db_driver
+        price_rows, dividend_rows, database_url, db_driver
     )
 
 

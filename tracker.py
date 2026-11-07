@@ -1,4 +1,3 @@
-import csv
 import importlib
 import math
 import os
@@ -9,8 +8,12 @@ import yfinance as yf
 from dotenv import load_dotenv
 
 from eodhd import get_eodhd_history
+from instruments_db import load_instruments
+from simpletools_prices import SimpleToolsClient
 
 PRICE_HISTORY_PERIOD = "1mo"
+DIVIDEND_HISTORY_START_DATE = "2022-01-01"
+SIMPLETOOLS_CLIENT = SimpleToolsClient()
 
 # Carica la configurazione locale senza sovrascrivere le variabili già impostate.
 load_dotenv(Path(__file__).with_name(".env"))
@@ -27,80 +30,6 @@ def load_psycopg2():
             "La libreria psycopg2 non è installata. "
             "Esegui 'python -m pip install -r requirements.txt'."
         ) from error
-
-
-def load_instruments():
-    anagrafica_path = Path(__file__).with_name("Anagrafica.csv")
-    with anagrafica_path.open(encoding="utf-8-sig", newline="") as csv_file:
-        reader = csv.DictReader(csv_file, delimiter=";")
-        required_columns = {
-            "Ticker",
-            "Ticker_yf",
-            "Ticker_EODHD",
-            "Descrizione",
-        }
-        if reader.fieldnames is None or not required_columns.issubset(reader.fieldnames):
-            missing_columns = required_columns - set(reader.fieldnames or [])
-            raise ValueError(
-                "Colonne mancanti in Anagrafica.csv: "
-                + ", ".join(sorted(missing_columns))
-            )
-
-        instruments = []
-        seen_tickers = set()
-        for row_number, row in enumerate(reader, start=2):
-            ticker = (row.get("Ticker") or "").strip()
-            yahoo_ticker = (row.get("Ticker_yf") or "").strip()
-            eodhd_ticker = (row.get("Ticker_EODHD") or "").strip()
-            if not ticker:
-                raise ValueError(
-                    f"Ticker vuoto in Anagrafica.csv alla riga {row_number}"
-                )
-            if not yahoo_ticker and not eodhd_ticker:
-                raise ValueError(
-                    f"Ticker_yf e Ticker_EODHD vuoti in Anagrafica.csv "
-                    f"alla riga {row_number}"
-                )
-            if ticker in seen_tickers:
-                raise ValueError(
-                    f"Ticker duplicato '{ticker}' in Anagrafica.csv "
-                    f"alla riga {row_number}"
-                )
-            seen_tickers.add(ticker)
-            description = (row.get("Descrizione") or "").strip() or None
-            instruments.append(
-                (ticker, yahoo_ticker, eodhd_ticker, description)
-            )
-
-    if not instruments:
-        raise ValueError("Anagrafica.csv non contiene ticker da elaborare")
-    return instruments
-
-
-def upsert_instruments(cursor, instruments):
-    query = """
-        INSERT INTO instruments (ticker, description)
-        VALUES (%s, %s)
-        ON CONFLICT (ticker)
-        DO UPDATE SET description = EXCLUDED.description;
-    """
-    cursor.executemany(
-        query,
-        [
-            (ticker, description)
-            for ticker, _, _, description in instruments
-        ],
-    )
-
-
-def sync_instruments_to_db(instruments, db_driver):
-    connection = db_driver.connect(DATABASE_URL)
-    try:
-        with connection:
-            with connection.cursor() as cursor:
-                upsert_instruments(cursor, instruments)
-    finally:
-        connection.close()
 
 
 def get_etf_prices(yahoo_ticker):
@@ -164,6 +93,34 @@ def get_eodhd_prices(eodhd_ticker):
             f"{PRICE_HISTORY_PERIOD} per {eodhd_ticker}; salto."
         )
     return prices
+
+
+def get_simpletools_prices(stfi_isin):
+    print(f"Recupero dati per ISIN {stfi_isin} da SimpleTools...")
+    end_date = date.today()
+    start_date = end_date - timedelta(days=30)
+    prices = SIMPLETOOLS_CLIENT.fetch_history(stfi_isin)
+    recent_prices = [
+        (date_str, price)
+        for date_str, price in prices
+        if start_date.isoformat() <= date_str <= end_date.isoformat()
+    ]
+    if not recent_prices:
+        print(
+            f"Nessuna quotazione disponibile negli ultimi "
+            f"{PRICE_HISTORY_PERIOD} per ISIN {stfi_isin}; salto."
+        )
+    return recent_prices
+
+
+def get_simpletools_dividends(stfi_isin):
+    print(f"Recupero cedole SimpleTools per ISIN {stfi_isin}...")
+    dividends = SIMPLETOOLS_CLIENT.fetch_dividends(
+        stfi_isin, DIVIDEND_HISTORY_START_DATE
+    )
+    if not dividends:
+        print(f"Nessuna cedola SimpleTools disponibile per ISIN {stfi_isin}.")
+    return dividends
 
 
 def select_prices_to_save(prices, existing_dates, today_date):
@@ -253,14 +210,18 @@ def save_dividends_to_db(dividends, ticker, db_driver):
     print(f"Salvati {len(dividends)} dividendi per {ticker}.")
 
 
-def process_instrument(ticker, yahoo_ticker, eodhd_ticker, db_driver):
+def process_instrument(
+    ticker, yahoo_ticker, eodhd_ticker, stfi_isin, tipo, db_driver
+):
+    source_ticker = yahoo_ticker or eodhd_ticker or stfi_isin
     try:
         if yahoo_ticker:
             prices = get_etf_prices(yahoo_ticker)
-        else:
+        elif eodhd_ticker:
             prices = get_eodhd_prices(eodhd_ticker)
+        else:
+            prices = get_simpletools_prices(stfi_isin)
     except Exception as error:
-        source_ticker = yahoo_ticker or eodhd_ticker
         print(
             f"Errore durante il recupero delle quotazioni per "
             f"{source_ticker} ({ticker}): {error}. "
@@ -281,10 +242,21 @@ def process_instrument(ticker, yahoo_ticker, eodhd_ticker, db_driver):
             )
         else:
             save_dividends_to_db(dividends, ticker, db_driver)
+    elif not eodhd_ticker and tipo and tipo.strip().lower() == "bond":
+        try:
+            dividends = get_simpletools_dividends(stfi_isin)
+        except Exception as error:
+            print(
+                f"Errore durante il recupero delle cedole SimpleTools per "
+                f"{stfi_isin} ({ticker}): {error}. "
+                "Continuo con i ticker successivi."
+            )
+        else:
+            save_dividends_to_db(dividends, ticker, db_driver)
     else:
         print(
             f"Nessun recupero dividendi configurato per {ticker} "
-            "(sorgente EODHD)."
+            "(sorgenti senza supporto dividendi)."
         )
 
 
@@ -296,12 +268,16 @@ if __name__ == "__main__":
                 "La variabile d'ambiente DATABASE_URL non è impostata."
             )
 
-        instruments = load_instruments()
-        sync_instruments_to_db(instruments, db_driver)
+        instruments = load_instruments(DATABASE_URL, db_driver)
 
-        for ticker, yahoo_ticker, eodhd_ticker, _ in instruments:
+        for ticker, yahoo_ticker, eodhd_ticker, stfi_isin, _, tipo in instruments:
             process_instrument(
-                ticker, yahoo_ticker, eodhd_ticker, db_driver
+                ticker,
+                yahoo_ticker,
+                eodhd_ticker,
+                stfi_isin,
+                tipo,
+                db_driver,
             )
     except Exception as e:
         print(f"Errore durante l'esecuzione: {e}")

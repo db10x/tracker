@@ -13,7 +13,14 @@ Incolla questo codice SQL per creare la tabella che conterrà i tuoi dati e prem
 ```sql
 create table instruments (
     ticker text primary key,
-    description text
+    isin text,
+    description text,
+    tipo text,
+    comparto text,
+    ticker_yf text,
+    ticker_eodhd text,
+    isin_stfi text,
+    ticker_inv text
 );
 
 create table prices (
@@ -33,7 +40,9 @@ create table dividends (
 );
 ```
 
-La tabella `instruments` contiene il ticker canonico e la descrizione; `prices.ticker`, `dividends.ticker` e `portfolio_positions.ticker` lo usano come chiave esterna. `dividends` memorizza l'importo per azione e la data dell'evento riportata da Yahoo Finance, non l'incasso personale né necessariamente la data di pagamento. Gli script mantengono `Anagrafica.csv` come fonte dell'anagrafica: se `Ticker_yf` è valorizzato interrogano Yahoo Finance, altrimenti usano `Ticker_EODHD` per recuperare le chiusure EODHD. `Ticker` è il ticker canonico salvato nel database. EODHD non viene usato per i dividendi. `backfill_history.py` inizializza/aggiorna `instruments` insieme allo storico; il job giornaliero sincronizza le descrizioni prima di salvare prezzi e dividendi. Mantieni il CSV nella stessa cartella degli script e includilo nel repository, così sarà disponibile anche in GitHub Actions.
+La tabella `instruments` contiene tutte le informazioni dell'anagrafica; `prices.ticker`, `dividends.ticker` e `portfolio_positions.ticker` lo usano come chiave esterna. `dividends.amount` memorizza il dividendo per azione da Yahoo Finance o, per i bond SimpleTools, l'importo lordo per 100 di nominale. L'anagrafica è gestita direttamente in `public.instruments`; `tracker.py` e `backfill_history.py` leggono i dati dal database e non usano il CSV. Le fonti prezzi sono selezionate in questo ordine: Yahoo Finance (`Ticker_yf`), EODHD (`Ticker_EODHD`) e SimpleTools (`ISIN_stfi`). Yahoo Finance fornisce i dividendi; SimpleTools fornisce le cedole dei bond quando entrambi i ticker sono vuoti.
+
+L'anagrafica iniziale è già stata caricata in `public.instruments`. Per un database nuovo, crea `instruments` con il DDL sopra e inserisci i record direttamente in Supabase. Gli script ordinari leggono l'anagrafica da questa tabella e non usano `Anagrafica.csv`.
 
 
 Per aggiungere la gestione dei portafogli, esegui anche questo SQL nel SQL Editor. Su un database che contiene già `instruments` e `prices`, esegui solo questo blocco aggiuntivo, senza ricreare le tabelle esistenti:
@@ -57,9 +66,13 @@ create table public.portfolio_positions (
 
 `portfolios` contiene un record per portafoglio, identificato da un ID intero assegnato automaticamente; `portfolio_positions` contiene una riga per ticker e portafoglio, con quantità posseduta e prezzo medio di acquisto. La chiave primaria composta impedisce duplicati dello stesso ticker nel portafoglio. Per aggiungere più titoli dello stesso ticker, aggiorna la quantità e il prezzo medio della riga esistente. `quantity` accetta frazioni di titolo; `average_purchase_price` è facoltativo e deve essere positivo: finché non è valorizzato, la variazione rispetto all'acquisto non viene mostrata. Se usi esclusivamente titoli interi, puoi sostituire `quantity` con `integer`. Le due tabelle non includono date di creazione, non necessarie alla pagina.
 
+Per gli strumenti con `instruments.tipo = 'Bond'`, la pagina calcola il valore di mercato e gli importi di P/L in euro con la formula `prezzo × quantità ÷ 100`, poiché la quotazione è espressa per 100 di valore nominale. Per gli altri strumenti usa `prezzo × quantità`. Ad esempio, un bond quotato 100 con quantità 2000 vale 2000 €.
+
+La tabella delle posizioni può essere filtrata per `Tipo` e `Comparto` anche nella vista compatta, usando i menu allineati a sinistra nella barra (senza il titolo `Posizioni`) e il pulsante `Espandi tabella` a destra; i filtri non aggiungono colonne alla vista compatta. Nella vista espansa le colonne `Tipo` e `Comparto` compaiono dopo `Ticker` e i relativi menu filtro sono nelle intestazioni. I menu sono sincronizzati e consentono di combinare i due criteri; per tornare a tutti i risultati seleziona `Tutti i tipi` e `Tutti i comparti`.
+
 Nella pagina, il menu consente di scegliere solo un portafoglio: all'avvio viene selezionato il primo in ordine alfabetico e vengono caricati solo i suoi prezzi e le sue posizioni. Se non ci sono portafogli, la pagina chiede di crearne uno invece di mostrare tutti i ticker.
 
-La pagina web visualizza i dati con la chiave pubblica Supabase: abilita RLS e consenti al ruolo `anon` solo la lettura delle cinque tabelle usate dalla pagina. Nomi dei portafogli, posizioni, quantità, prezzi medi di acquisto e importi dei dividendi dei ticker presenti nei portafogli saranno leggibili pubblicamente. La pagina mostra la variazione percentuale rispetto al prezzo medio di acquisto quando il dato è disponibile e non mostra una tabella dei dividendi: visualizza solo un marcatore `D` sul grafico per ciascun evento, con tooltip sull'importo per azione. Non concedere permessi di scrittura a `anon`. Per un database nuovo, applica:
+La pagina web visualizza i dati con la chiave pubblica Supabase: abilita RLS e consenti al ruolo `anon` solo la lettura delle cinque tabelle usate dalla pagina. Nomi dei portafogli, posizioni, quantità, prezzi medi di acquisto e importi dei dividendi dei ticker presenti nei portafogli saranno leggibili pubblicamente. La pagina mostra la variazione percentuale rispetto al prezzo medio di acquisto quando il dato è disponibile e non mostra una tabella dei dividendi: visualizza solo un marcatore `D` sul grafico per ciascun evento passato, con tooltip sull'importo. Per i bond SimpleTools, l'importo rappresenta la cedola lorda per 100 di nominale; gli eventi futuri non vengono caricati né mostrati. Non concedere permessi di scrittura a `anon`. Per un database nuovo, applica:
 
 ```sql
 alter table public.instruments enable row level security;
@@ -82,7 +95,7 @@ create policy "Allow anonymous read access to portfolio positions"
     on public.portfolio_positions for select to anon using (true);
 ```
 
-Le righe di `portfolio_positions` devono riferirsi a ticker già presenti in `instruments`. Le modifiche all'anagrafica vengono effettuate dagli script usando `DATABASE_URL`; crea o modifica portafogli e posizioni da Supabase con un ruolo autorizzato, non dalla chiave anon della pagina.
+Le righe di `portfolio_positions` devono riferirsi a ticker già presenti in `instruments`. Dopo l'importazione iniziale, modifica l'anagrafica direttamente in Supabase con un ruolo autorizzato; crea o modifica portafogli e posizioni allo stesso modo, non dalla chiave anon della pagina.
 
 Se hai già applicato le policy anon per `instruments` e `prices`, non rieseguire quelle istruzioni: applica solo le seguenti per le nuove tabelle.
 
@@ -139,7 +152,7 @@ Special symbols in passwords#
 If you use special symbols in your Postgres password, you must remember to [percent-encode](https://en.wikipedia.org/wiki/Percent-encoding) your password later if using the Postgres connection string, for example, postgresql://postgres.projectref:p%3Dword@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 
 
-Se usi EODHD, crea anche il secret `EODHD_API_TOKEN` e inserisci il token API del tuo account. È necessario solo per le righe con `Ticker_yf` vuoto e `Ticker_EODHD` valorizzato.
+Se usi EODHD, crea anche il secret `EODHD_API_TOKEN` e inserisci il token API del tuo account. È necessario solo per le righe con `Ticker_yf` vuoto e `Ticker_EODHD` valorizzato. Se entrambi i ticker sono vuoti, lo script usa SimpleTools: compila `ISIN_stfi` con l'ISIN riconosciuto dal sito.
 
 
 ## Passo 5: Creare l'automazione (GitHub Action)
@@ -154,8 +167,7 @@ Non devi aspettare domani sera per vedere se tutto è configurato correttamente:
 Nel tuo repository GitHub, clicca sulla tab Actions in alto.
 Sulla sinistra vedrai il flusso di lavoro chiamato Daily ETF Tracker. Cliccaci sopra.
 Sulla destra, vedrai un pulsante con scritto "Run workflow". Cliccaci e conferma cliccando sul bottone verde.
-Dopo qualche secondo, vedrai partire il job. Cliccaci sopra per vedere i log in tempo reale: se vedi il messaggio "Salvato con successo...", significa che l'orologio svizzero del cloud ha fatto il suo dovere!
-Se vai ora nella tabella del tuo database su Supabase (Table Editor > prices), troverai i prezzi dei ticker presenti in `Anagrafica.csv`. Da questo momento in poi, lo script si eseguirà da solo ogni giorno alle 18:00 UTC, weekend inclusi.
+Dopo qualche secondo, vedrai partire il job. Cliccaci sopra per vedere i log in tempo reale: se vedi il messaggio "Salvato con successo...", significa che l'orologio svizzero del cloud ha fatto il suo dovere! I ticker elaborati provengono da Supabase e lo script si eseguirà ogni giorno alle 18:00 UTC, weekend inclusi.
 
 ## Passo 7: Pubblicare la pagina web con GitHub Pages
 
@@ -179,9 +191,9 @@ notepad .env
 python tracker.py
 ```
 
-Nel file `.env`, sostituisci l'URI di esempio con la connection string del tuo database. Per usare EODHD imposta anche `EODHD_API_TOKEN` con il token del tuo account. Salva `.env` nella cartella del progetto: entrambi gli script lo caricano automaticamente e il file è escluso da Git. Non pubblicare né condividere questo file. Se `DATABASE_URL` o `EODHD_API_TOKEN` sono già definite nell'ambiente di Windows, hanno la precedenza sui valori in `.env`. Se `psycopg2` manca, installa le dipendenze con il comando indicato sopra. Il file `Anagrafica.csv` deve rimanere nella stessa cartella degli script.
+Nel file `.env`, sostituisci l'URI di esempio con la connection string del tuo database. Per usare EODHD imposta anche `EODHD_API_TOKEN` con il token del tuo account. Salva `.env` nella cartella del progetto: gli script lo caricano automaticamente e il file è escluso da Git. Non pubblicare né condividere questo file. Se `DATABASE_URL` o `EODHD_API_TOKEN` sono già definite nell'ambiente di Windows, hanno la precedenza sui valori in `.env`. Se `psycopg2` manca, installa le dipendenze con il comando indicato sopra. Gli strumenti vengono letti dalla tabella `public.instruments` di Supabase.
 
-Il job giornaliero legge da Yahoo Finance le quotazioni dell'ultimo mese e lo storico dei dividendi per i ticker con `Ticker_yf`; se `Ticker_yf` è vuoto, legge da EODHD le chiusure dell'ultimo mese tramite `Ticker_EODHD` (serve `EODHD_API_TOKEN`). Salva ogni seduta recente non ancora presente nel database usando la data effettiva fornita dalla sorgente; questa finestra consente di recuperare anche prezzi aggiornati settimanalmente o pubblicati in ritardo, senza assegnarli al giorno sbagliato. La quotazione odierna, se disponibile, viene aggiornata anche se esiste già; nei giorni senza nuove quotazioni non vengono creati record artificiali. Gli eventi dividendo Yahoo sono salvati tramite upsert su `(date, ticker)`, quindi riesecuzioni e correzioni dell'importo non creano duplicati.
+Il job giornaliero legge da Yahoo Finance le quotazioni dell'ultimo mese e lo storico dei dividendi per i ticker con `Ticker_yf`; se è vuoto, legge da EODHD tramite `Ticker_EODHD` (serve `EODHD_API_TOKEN`) o, se anche questo è vuoto, da SimpleTools tramite `ISIN_stfi`. Per gli strumenti `Bond` SimpleTools importa anche le cedole del piano del titolo dal 1° gennaio 2022 a oggi, ignorando le date future e normalizzando gli importi per 100 di nominale. Salva ogni seduta recente non ancora presente nel database usando la data effettiva fornita dalla sorgente; questa finestra consente di recuperare anche prezzi aggiornati settimanalmente o pubblicati in ritardo, senza assegnarli al giorno sbagliato. La quotazione odierna, se disponibile, viene aggiornata anche se esiste già; nei giorni senza nuove quotazioni non vengono creati record artificiali. Dividendi Yahoo e cedole SimpleTools sono salvati tramite upsert su `(date, ticker)`, quindi riesecuzioni non creano duplicati.
 
 ### Backup del database Supabase
 
@@ -201,12 +213,12 @@ Lo script legge `DATABASE_URL` e, facoltativamente, `PG_DUMP_PATH` dall'ambiente
 
 ### Caricamento iniziale dello storico
 
-Per popolare `prices` con lo storico dei prezzi dal 1° gennaio 2022 e `dividends` con tutti gli eventi storici disponibili su Yahoo Finance per i ticker in `Anagrafica.csv`, esegui manualmente `backfill_history.py` dalla cartella del progetto:
+Puoi popolare `prices` con lo storico dei prezzi dal 1° gennaio 2022 e `dividends` con tutti gli eventi storici disponibili su Yahoo Finance. Esegui manualmente `backfill_history.py` dalla cartella del progetto:
 
 ```powershell
 python backfill_history.py
 ```
 
-Lo script scarica le chiusure e i dividendi da Yahoo Finance dal 1° gennaio 2022 incluso, usando `Ticker_yf`. Se questo campo è vuoto, scarica da EODHD le chiusure (`close`) tramite `Ticker_EODHD`, nei limiti del piano gratuito (massimo 365 giorni); per questa sorgente è necessario `EODHD_API_TOKEN` in `.env`. EODHD non viene usato per i dividendi. Lo script salva `Ticker` come identificativo canonico e sincronizza ticker e descrizioni del CSV in `instruments`. I dividendi Yahoo sono importi per azione alle date indicate, non una ricostruzione degli incassi del portafoglio. Se per un ticker non sono disponibili prezzi, lo script mostra un avviso e passa al ticker successivo. Prima di scrivere nel database verifica i dati raccolti; poi salva anagrafica, prezzi e dividendi disponibili in un'unica transazione. Per prezzi e dividendi inserisce solo le date mancanti e lascia invariati i record già presenti. Le chiavi univoche consentono di rilanciarlo senza creare duplicati. Richiede le stesse dipendenze e `DATABASE_URL` dello script giornaliero.
+Lo script legge gli strumenti da `public.instruments` e scarica le chiusure e i dividendi da Yahoo Finance dal 1° gennaio 2022 incluso, usando `ticker_yf`. Se è vuoto, usa EODHD con `ticker_eodhd` (massimo 365 giorni; richiede `EODHD_API_TOKEN` in `.env`); se sono vuoti entrambi, usa SimpleTools con `isin_stfi` e lo storico disponibile sul sito. Per gli strumenti `Bond`, SimpleTools ricava anche le cedole dal piano del titolo, salvando soltanto le date dal 1° gennaio 2022 a oggi e ignorando quelle future; gli importi sono normalizzati per 100 di nominale. `ticker` è l'identificativo canonico usato nel database. I dividendi Yahoo sono importi per azione alle date indicate. Se per un ticker non sono disponibili prezzi, lo script mostra un avviso e passa al ticker successivo. I prezzi e i dividendi disponibili vengono salvati in un'unica transazione. Per prezzi e dividendi inserisce solo le date mancanti e lascia invariati i record già presenti. Le chiavi univoche consentono di rilanciarlo senza creare duplicati. Richiede le stesse dipendenze e `DATABASE_URL` dello script giornaliero.
 
 Per verificare che la variabile sia caricata puoi eseguire `$env:DATABASE_URL` in PowerShell; il valore salvato nel file locale viene letto all'avvio degli script.

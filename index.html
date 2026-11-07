@@ -393,6 +393,7 @@
         .assets-panel { padding: 0; overflow: hidden; }
         .assets-toolbar {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
@@ -418,6 +419,44 @@
         .expand-table-button:hover {
             border-color: rgba(56, 189, 248, .5);
             color: var(--accent);
+        }
+
+        .assets-toolbar-actions,
+        .compact-filter-controls {
+            display: flex;
+            align-items: center;
+        }
+
+        .assets-toolbar-actions { gap: 8px; margin-left: auto; }
+        .compact-filter-controls { gap: 8px; }
+        .dashboard-grid:not(.is-assets-expanded) .assets-title { display: none; }
+        .dashboard-grid:not(.is-assets-expanded) .assets-toolbar-actions {
+            flex: 1;
+            margin-left: 0;
+        }
+        .dashboard-grid:not(.is-assets-expanded) .expand-table-button { margin-left: auto; }
+        .compact-filter {
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+            gap: 3px;
+            color: var(--faint);
+            font-size: 9px;
+            line-height: 1.1;
+            letter-spacing: .06em;
+        }
+        .compact-filter select {
+            width: 98px;
+            max-width: 100%;
+            min-height: 30px;
+            padding: 4px 6px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            font: inherit;
+            font-size: 10px;
+            letter-spacing: normal;
         }
 
         .assets-table-scroll {
@@ -462,6 +501,27 @@
         }
 
         .assets-subheading .sort-button { white-space: normal; line-height: 1.25; }
+        .column-filter {
+            min-width: 0;
+            width: 100%;
+            padding: 4px 5px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            font: inherit;
+            letter-spacing: normal;
+            text-transform: none;
+        }
+        .filter-heading {
+            min-width: 0;
+            flex-direction: column;
+            gap: 3px;
+            color: var(--faint);
+            font-size: 9px;
+            line-height: 1.1;
+            letter-spacing: .1em;
+        }
 
         .sort-button[data-sort="price"], .sort-button[data-sort="variation"],
         .sort-button[data-sort="purchaseVariation"], .sort-button[data-sort="latestDate"],
@@ -512,6 +572,14 @@
         .asset-price { grid-column: 2; grid-row: 1; }
         .asset-variation { grid-column: 3; grid-row: 1; }
         .asset-purchase-variation { grid-column: 4; grid-row: 1; }
+        .asset-type, .asset-compartment {
+            min-width: 0;
+            overflow: hidden;
+            color: var(--muted);
+            font-size: 10px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .asset-date, .asset-market-value, .asset-daily-change-percent, .asset-daily-change,
         .asset-total-change-percent, .asset-total-change {
             color: var(--text);
@@ -527,8 +595,8 @@
         .dashboard-grid.is-assets-expanded .chart-panel { display: none; }
         .dashboard-grid.is-assets-expanded .assets-subheading,
         .dashboard-grid.is-assets-expanded .asset-row {
-            min-width: 990px;
-            grid-template-columns: minmax(220px, 2fr) repeat(7, minmax(110px, 1fr));
+            min-width: 1280px;
+            grid-template-columns: minmax(220px, 2fr) repeat(9, minmax(110px, 1fr));
         }
 
         .dashboard-grid.is-assets-expanded .assets-table-scroll { overflow: auto; }
@@ -542,12 +610,26 @@
         .dashboard-grid.is-assets-expanded #asset-list { flex: none; overflow: visible; }
         .dashboard-grid.is-assets-expanded .expanded-only { display: block; }
         .dashboard-grid.is-assets-expanded .compact-only { display: none; }
-        .dashboard-grid.is-assets-expanded .asset-date { grid-column: 3; grid-row: 1; }
-        .dashboard-grid.is-assets-expanded .asset-market-value { grid-column: 4; grid-row: 1; }
-        .dashboard-grid.is-assets-expanded .asset-daily-change-percent { grid-column: 5; grid-row: 1; }
-        .dashboard-grid.is-assets-expanded .asset-daily-change { grid-column: 6; grid-row: 1; }
-        .dashboard-grid.is-assets-expanded .asset-total-change-percent { grid-column: 7; grid-row: 1; }
-        .dashboard-grid.is-assets-expanded .asset-total-change { grid-column: 8; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .filter-heading { display: flex; }
+        .dashboard-grid.is-assets-expanded .compact-filter-controls { display: none; }
+        .dashboard-grid.is-assets-expanded .asset-type { grid-column: 2; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-compartment { grid-column: 3; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-price { grid-column: 4; }
+        .dashboard-grid.is-assets-expanded .asset-date { grid-column: 5; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-market-value { grid-column: 6; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-daily-change-percent { grid-column: 7; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-daily-change { grid-column: 8; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-total-change-percent { grid-column: 9; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded .asset-total-change { grid-column: 10; grid-row: 1; }
+        .dashboard-grid.is-assets-expanded [data-sort="price"] { grid-column: 4; }
+        .dashboard-grid.is-assets-expanded [data-sort="latestDate"] { grid-column: 5; }
+        .dashboard-grid.is-assets-expanded [data-sort="marketValue"] { grid-column: 6; }
+        .dashboard-grid.is-assets-expanded [data-sort="variation"].expanded-only { grid-column: 7; }
+        .dashboard-grid.is-assets-expanded [data-sort="dailyChange"] { grid-column: 8; }
+        .dashboard-grid.is-assets-expanded [data-sort="purchaseVariation"].expanded-only { grid-column: 9; }
+        .dashboard-grid.is-assets-expanded [data-sort="purchaseChange"] { grid-column: 10; }
+        .dashboard-grid.is-assets-expanded #type-filter-header { grid-column: 2; }
+        .dashboard-grid.is-assets-expanded #compartment-filter-header { grid-column: 3; }
 
         body.assets-expanded main {
             width: calc(100% - 48px);
@@ -605,6 +687,11 @@
             main { padding-top: 18px; }
             .panel { padding: 14px; }
             .assets-panel { padding: 0; }
+            .assets-toolbar { flex-wrap: wrap; }
+            .assets-toolbar-actions { max-width: 100%; margin-left: auto; }
+            .compact-filter-controls { gap: 5px; }
+            .compact-filter { font-size: 8px; }
+            .compact-filter select { width: 92px; max-width: 25vw; font-size: 9px; }
             .chart-wrap { min-height: 300px; padding: 8px 4px; }
         }
 
@@ -754,17 +841,45 @@
             <section class="panel assets-panel" aria-label="Titoli del portafoglio">
                 <div class="assets-toolbar">
                     <span class="assets-title">Posizioni</span>
-                    <button id="toggle-table-expanded" class="expand-table-button" type="button"
-                        aria-controls="dashboard-grid" aria-pressed="false">Espandi tabella</button>
+                    <div class="assets-toolbar-actions">
+                        <div class="compact-filter-controls" role="group" aria-label="Filtri della tabella">
+                            <label class="compact-filter" for="compact-type-filter">
+                                Tipo
+                                <select id="compact-type-filter" aria-label="Filtra per tipo">
+                                    <option value="">Tutti i tipi</option>
+                                </select>
+                            </label>
+                            <label class="compact-filter" for="compact-compartment-filter">
+                                Comparto
+                                <select id="compact-compartment-filter" aria-label="Filtra per comparto">
+                                    <option value="">Tutti i comparti</option>
+                                </select>
+                            </label>
+                        </div>
+                        <button id="toggle-table-expanded" class="expand-table-button" type="button"
+                            aria-controls="dashboard-grid" aria-pressed="false">Espandi tabella</button>
+                    </div>
                 </div>
                 <div class="assets-table-scroll">
                     <div class="assets-subheading" role="row">
                         <button class="sort-button" type="button" data-sort="ticker" aria-sort="ascending">Ticker<span class="sort-indicator" aria-hidden="true">↑</span></button>
+                        <label id="type-filter-header" class="filter-heading expanded-only" for="type-filter">
+                            Tipo
+                            <select id="type-filter" class="column-filter" aria-label="Filtra per tipo">
+                                <option value="">Tutti i tipi</option>
+                            </select>
+                        </label>
+                        <label id="compartment-filter-header" class="filter-heading expanded-only" for="compartment-filter">
+                            Comparto
+                            <select id="compartment-filter" class="column-filter" aria-label="Filtra per comparto">
+                                <option value="">Tutti i comparti</option>
+                            </select>
+                        </label>
                         <button class="sort-button" type="button" data-sort="price" aria-sort="none">Prezzo<span class="sort-indicator" aria-hidden="true"></span></button>
                         <button class="sort-button compact-only" type="button" data-sort="variation" aria-sort="none">P/L giornaliero [%]<span class="sort-indicator" aria-hidden="true"></span></button>
                         <button class="sort-button compact-only" type="button" data-sort="purchaseVariation" aria-sort="none" title="Variazione rispetto al prezzo medio di acquisto">P/L totale [%]<span class="sort-indicator" aria-hidden="true"></span></button>
                         <button class="sort-button expanded-only" type="button" data-sort="latestDate" aria-sort="none">Data<span class="sort-indicator" aria-hidden="true"></span></button>
-                        <button class="sort-button expanded-only" type="button" data-sort="marketValue" aria-sort="none" title="Prezzo moltiplicato per la quantità">Valore di mercato<span class="sort-indicator" aria-hidden="true"></span></button>
+                        <button class="sort-button expanded-only" type="button" data-sort="marketValue" aria-sort="none" title="Prezzo per quantità; per i bond diviso 100">Valore di mercato<span class="sort-indicator" aria-hidden="true"></span></button>
                         <button class="sort-button expanded-only" type="button" data-sort="variation" aria-sort="none">P/L giornaliero [%]<span class="sort-indicator" aria-hidden="true"></span></button>
                         <button class="sort-button expanded-only" type="button" data-sort="dailyChange" aria-sort="none">P/L giornaliero [€]<span class="sort-indicator" aria-hidden="true"></span></button>
                         <button class="sort-button expanded-only" type="button" data-sort="purchaseVariation" aria-sort="none">P/L totale [%]<span class="sort-indicator" aria-hidden="true"></span></button>
@@ -791,14 +906,14 @@
         let portfolioRequestId = 0;
         let activePortfolioId = '';
         const portfolioDataCache = new Map();
-        const portfolioCacheTtlMs = 5 * 60 * 1000;
-        const portfolioCacheMaxEntries = 3;
         let summaries = [];
         let selectedTickers = new Set();
         let selectedRange = 'all';
         let percentageMode = false;
         let totalReturnMode = false;
         let summarySort = { key: 'ticker', direction: 'asc' };
+        let typeFilter = '';
+        let compartmentFilter = '';
 
         const numberFormat = new Intl.NumberFormat('it-IT', {
             useGrouping: true,
@@ -1091,7 +1206,13 @@
             chartInstance.update('none');
         }
 
-        function getSummaries(records, quantities, averagePurchasePrices) {
+        function getSummaries(
+            records,
+            quantities,
+            averagePurchasePrices,
+            instrumentTypes,
+            instrumentCompartments
+        ) {
             const byTicker = new Map();
             records.forEach(record => {
                 if (!byTicker.has(record.ticker)) byTicker.set(record.ticker, []);
@@ -1116,6 +1237,9 @@
                         && averagePurchasePrice > 0
                         ? averagePurchasePrice
                         : null;
+                    const valueMultiplier = instrumentTypes.get(ticker)?.trim().toLowerCase() === 'bond'
+                        ? 0.01
+                        : 1;
                     const purchaseVariation = Number.isFinite(price) && validAveragePurchasePrice !== null
                         ? ((price - validAveragePurchasePrice) / validAveragePurchasePrice) * 100
                         : null;
@@ -1123,21 +1247,25 @@
                     return {
                         ticker,
                         description: latest?.description || '',
+                        tipo: instrumentTypes.get(ticker) || '',
+                        comparto: instrumentCompartments.get(ticker) || '',
                         latestDate: latest?.date || null,
                         quantity,
                         price: Number.isFinite(price) ? price : null,
                         variation,
                         purchaseVariation,
-                        marketValue: Number.isFinite(price) ? price * quantity : null,
+                        marketValue: Number.isFinite(price) ? price * quantity * valueMultiplier : null,
                         dailyChange: Number.isFinite(price) && Number.isFinite(previousPrice)
-                            ? (price - previousPrice) * quantity
+                            ? (price - previousPrice) * quantity * valueMultiplier
                             : null,
-                        previousMarketValue: Number.isFinite(previousPrice) ? previousPrice * quantity : null,
+                        previousMarketValue: Number.isFinite(previousPrice)
+                            ? previousPrice * quantity * valueMultiplier
+                            : null,
                         purchaseChange: Number.isFinite(price) && validAveragePurchasePrice !== null
-                            ? (price - validAveragePurchasePrice) * quantity
+                            ? (price - validAveragePurchasePrice) * quantity * valueMultiplier
                             : null,
                         purchaseCostBasis: validAveragePurchasePrice !== null
-                            ? validAveragePurchasePrice * quantity
+                            ? validAveragePurchasePrice * quantity * valueMultiplier
                             : null
                     };
                 })
@@ -1147,7 +1275,20 @@
         function renderAssetList() {
             const list = document.getElementById('asset-list');
             list.replaceChildren();
-            const sortedSummaries = [...summaries].sort((a, b) => {
+            updateInstrumentFilters();
+            const filteredSummaries = summaries.filter(summary =>
+                matchesInstrumentFilter(summary.tipo, typeFilter)
+                && matchesInstrumentFilter(summary.comparto, compartmentFilter)
+            );
+            if (!filteredSummaries.length && summaries.length) {
+                const emptyMessage = document.createElement('p');
+                emptyMessage.className = 'section-description';
+                emptyMessage.style.padding = '18px';
+                emptyMessage.textContent = 'Nessuna posizione corrisponde ai filtri selezionati.';
+                list.appendChild(emptyMessage);
+                return;
+            }
+            const sortedSummaries = [...filteredSummaries].sort((a, b) => {
                 const left = a[summarySort.key];
                 const right = b[summarySort.key];
                 if (left === null || right === null) {
@@ -1217,6 +1358,12 @@
                 }
                 main.append(identity, price);
 
+                const type = document.createElement('span');
+                type.className = 'asset-type expanded-only';
+                type.textContent = summary.tipo || '—';
+                const compartment = document.createElement('span');
+                compartment.className = 'asset-compartment expanded-only';
+                compartment.textContent = summary.comparto || '—';
                 const latestDate = document.createElement('span');
                 latestDate.className = 'asset-date expanded-only';
                 latestDate.textContent = summary.latestDate
@@ -1240,6 +1387,8 @@
                 metrics.append(quantity);
                 button.append(
                     main,
+                    type,
+                    compartment,
                     variation,
                     purchaseVariation,
                     latestDate,
@@ -1252,6 +1401,52 @@
                 );
                 button.addEventListener('click', () => toggleTicker(summary.ticker));
                 list.appendChild(button);
+            });
+        }
+
+        function matchesInstrumentFilter(value, selectedValue) {
+            const normalizedValue = (value || '').trim();
+            if (selectedValue === '__empty__') return !normalizedValue;
+            return !selectedValue || normalizedValue === selectedValue;
+        }
+
+        function updateInstrumentFilters() {
+            const filters = [
+                {
+                    ids: ['type-filter', 'compact-type-filter'],
+                    allLabel: 'Tutti i tipi',
+                    selectedValue: typeFilter,
+                    values: summaries.map(summary => summary.tipo)
+                },
+                {
+                    ids: ['compartment-filter', 'compact-compartment-filter'],
+                    allLabel: 'Tutti i comparti',
+                    selectedValue: compartmentFilter,
+                    values: summaries.map(summary => summary.comparto)
+                }
+            ];
+
+            filters.forEach(({ ids, allLabel, selectedValue, values }) => {
+                const uniqueValues = [...new Set(values.map(value => (value || '').trim()).filter(Boolean))]
+                    .sort((a, b) => a.localeCompare(b, 'it'));
+                const options = [['', allLabel], ...uniqueValues.map(value => [value, value])];
+                if (values.some(value => !(value || '').trim())) {
+                    options.push(['__empty__', 'Non specificato']);
+                }
+                if (!options.some(([value]) => value === selectedValue)) {
+                    if (ids.includes('type-filter')) typeFilter = '';
+                    else compartmentFilter = '';
+                }
+                ids.forEach(id => {
+                    const select = document.getElementById(id);
+                    select.replaceChildren(...options.map(([value, label]) => {
+                        const option = document.createElement('option');
+                        option.value = value;
+                        option.textContent = label;
+                        return option;
+                    }));
+                    select.value = ids.includes('type-filter') ? typeFilter : compartmentFilter;
+                });
             });
         }
 
@@ -1304,6 +1499,19 @@
                     sortButton.querySelector('.sort-indicator').textContent =
                         direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '';
                 });
+                renderAssetList();
+            });
+        });
+
+        document.querySelectorAll('#type-filter, #compact-type-filter').forEach(select => {
+            select.addEventListener('change', event => {
+                typeFilter = event.currentTarget.value;
+                renderAssetList();
+            });
+        });
+        document.querySelectorAll('#compartment-filter, #compact-compartment-filter').forEach(select => {
+            select.addEventListener('change', event => {
+                compartmentFilter = event.currentTarget.value;
                 renderAssetList();
             });
         });
@@ -1366,7 +1574,9 @@
             const pricesByTicker = new Map(chartTickers.map(ticker => [ticker, new Map()]));
             records.forEach(record => pricesByTicker.get(record.ticker).set(record.date, Number(record.price)));
 
+            const today = new Date().toISOString().slice(0, 10);
             const dividendEvents = dividends
+                .filter(dividend => dividend.date <= today)
                 .map(dividend => ({
                     ...dividend,
                     amount: Number(dividend.amount),
@@ -1670,26 +1880,11 @@
         }
 
         function getCachedPortfolioData(portfolioId) {
-            const cacheKey = String(portfolioId);
-            const cachedEntry = portfolioDataCache.get(cacheKey);
-            if (!cachedEntry) return null;
-            if (Date.now() - cachedEntry.cachedAt >= portfolioCacheTtlMs) {
-                portfolioDataCache.delete(cacheKey);
-                return null;
-            }
-
-            portfolioDataCache.delete(cacheKey);
-            portfolioDataCache.set(cacheKey, cachedEntry);
-            return cachedEntry.data;
+            return portfolioDataCache.get(String(portfolioId)) || null;
         }
 
         function cachePortfolioData(portfolioId, data) {
-            const cacheKey = String(portfolioId);
-            portfolioDataCache.delete(cacheKey);
-            portfolioDataCache.set(cacheKey, { data, cachedAt: Date.now() });
-            while (portfolioDataCache.size > portfolioCacheMaxEntries) {
-                portfolioDataCache.delete(portfolioDataCache.keys().next().value);
-            }
+            portfolioDataCache.set(String(portfolioId), data);
         }
 
         function renderPortfolioData(portfolioId, { positions, prices, dividends, instruments }) {
@@ -1715,13 +1910,25 @@
             const descriptions = new Map(instruments.map(instrument =>
                 [instrument.ticker, instrument.description || '']
             ));
+            const instrumentTypes = new Map(instruments.map(instrument =>
+                [instrument.ticker, instrument.tipo || '']
+            ));
+            const instrumentCompartments = new Map(instruments.map(instrument =>
+                [instrument.ticker, instrument.comparto || '']
+            ));
             activePortfolioId = portfolioId;
             const records = prices.map(record => ({
                 ...record,
                 price: Number(record.price),
                 description: descriptions.get(record.ticker) || ''
             }));
-            summaries = getSummaries(records, quantities, averagePurchasePrices);
+            summaries = getSummaries(
+                records,
+                quantities,
+                averagePurchasePrices,
+                instrumentTypes,
+                instrumentCompartments
+            );
             renderPortfolioMetrics(summaries);
             selectedTickers = new Set();
             const firstTickerWithPrices = summaries.find(summary => Number.isFinite(summary.price));
@@ -1787,7 +1994,7 @@
                 fetchPagedDividends(tickers),
                 supabaseClient
                     .from('instruments')
-                    .select('ticker, description')
+                    .select('ticker, description, tipo, comparto')
                     .in('ticker', tickers)
             ]);
             if (requestId !== portfolioRequestId) return;
