@@ -790,6 +790,9 @@
         let chartInstance = null;
         let portfolioRequestId = 0;
         let activePortfolioId = '';
+        const portfolioDataCache = new Map();
+        const portfolioCacheTtlMs = 5 * 60 * 1000;
+        const portfolioCacheMaxEntries = 3;
         let summaries = [];
         let selectedTickers = new Set();
         let selectedRange = 'all';
@@ -1666,6 +1669,66 @@
             }
         }
 
+        function getCachedPortfolioData(portfolioId) {
+            const cacheKey = String(portfolioId);
+            const cachedEntry = portfolioDataCache.get(cacheKey);
+            if (!cachedEntry) return null;
+            if (Date.now() - cachedEntry.cachedAt >= portfolioCacheTtlMs) {
+                portfolioDataCache.delete(cacheKey);
+                return null;
+            }
+
+            portfolioDataCache.delete(cacheKey);
+            portfolioDataCache.set(cacheKey, cachedEntry);
+            return cachedEntry.data;
+        }
+
+        function cachePortfolioData(portfolioId, data) {
+            const cacheKey = String(portfolioId);
+            portfolioDataCache.delete(cacheKey);
+            portfolioDataCache.set(cacheKey, { data, cachedAt: Date.now() });
+            while (portfolioDataCache.size > portfolioCacheMaxEntries) {
+                portfolioDataCache.delete(portfolioDataCache.keys().next().value);
+            }
+        }
+
+        function renderPortfolioData(portfolioId, { positions, prices, dividends, instruments }) {
+            const quantities = new Map(positions.map(position =>
+                [position.ticker, Number(position.quantity)]
+            ));
+            const averagePurchasePrices = new Map(positions.map(position => [
+                position.ticker,
+                position.average_purchase_price === null || position.average_purchase_price === undefined
+                    ? null
+                    : Number(position.average_purchase_price)
+            ]));
+
+            if (quantities.size === 0) {
+                activePortfolioId = portfolioId;
+                summaries = [];
+                selectedTickers = new Set();
+                renderChart([]);
+                document.getElementById('asset-list').textContent = 'Nessuna posizione in questo portafoglio.';
+                return;
+            }
+
+            const descriptions = new Map(instruments.map(instrument =>
+                [instrument.ticker, instrument.description || '']
+            ));
+            activePortfolioId = portfolioId;
+            const records = prices.map(record => ({
+                ...record,
+                price: Number(record.price),
+                description: descriptions.get(record.ticker) || ''
+            }));
+            summaries = getSummaries(records, quantities, averagePurchasePrices);
+            renderPortfolioMetrics(summaries);
+            selectedTickers = new Set();
+            const firstTickerWithPrices = summaries.find(summary => Number.isFinite(summary.price));
+            if (firstTickerWithPrices) selectedTickers.add(firstTickerWithPrices.ticker);
+            renderChart(records, dividends);
+        }
+
         async function handlePortfolioChange(portfolioId) {
             if (!portfolioId) return;
             const requestId = ++portfolioRequestId;
@@ -1673,6 +1736,12 @@
             showLoadError('');
             document.getElementById('asset-list').replaceChildren();
             document.getElementById('asset-list').textContent = 'Caricamento dei dati…';
+
+            const cachedData = getCachedPortfolioData(portfolioId);
+            if (cachedData) {
+                renderPortfolioData(portfolioId, cachedData);
+                return;
+            }
 
             const allPositions = [];
             const pageSize = 1000;
@@ -1700,26 +1769,27 @@
                 page += 1;
             }
 
-            const quantities = new Map(allPositions.map(position =>
-                [position.ticker, Number(position.quantity)]
-            ));
-            const averagePurchasePrices = new Map(allPositions.map(position => [
-                position.ticker,
-                position.average_purchase_price === null || position.average_purchase_price === undefined
-                    ? null
-                    : Number(position.average_purchase_price)
-            ]));
-
-            if (quantities.size === 0) {
-                activePortfolioId = portfolioId;
-                summaries = [];
-                selectedTickers = new Set();
-                renderChart([]);
-                document.getElementById('asset-list').textContent = 'Nessuna posizione in questo portafoglio.';
+            if (allPositions.length === 0) {
+                const emptyPortfolioData = {
+                    positions: allPositions,
+                    prices: [],
+                    dividends: [],
+                    instruments: []
+                };
+                cachePortfolioData(portfolioId, emptyPortfolioData);
+                renderPortfolioData(portfolioId, emptyPortfolioData);
                 return;
             }
 
-            const prices = await fetchPagedPrices([...quantities.keys()]);
+            const tickers = allPositions.map(position => position.ticker);
+            const [prices, dividends, instrumentsResult] = await Promise.all([
+                fetchPagedPrices(tickers),
+                fetchPagedDividends(tickers),
+                supabaseClient
+                    .from('instruments')
+                    .select('ticker, description')
+                    .in('ticker', tickers)
+            ]);
             if (requestId !== portfolioRequestId) return;
             if (prices === null) {
                 showLoadError('Errore nel caricamento dei prezzi del portafoglio.');
@@ -1728,8 +1798,6 @@
                 return;
             }
 
-            const dividends = await fetchPagedDividends([...quantities.keys()]);
-            if (requestId !== portfolioRequestId) return;
             if (dividends === null) {
                 showLoadError('Errore nel caricamento dei dividendi del portafoglio.');
                 renderPortfolioMetrics(summaries);
@@ -1737,11 +1805,7 @@
                 return;
             }
 
-            const { data: instruments, error: instrumentsError } = await supabaseClient
-                .from('instruments')
-                .select('ticker, description')
-                .in('ticker', [...quantities.keys()]);
-            if (requestId !== portfolioRequestId) return;
+            const { data: instruments, error: instrumentsError } = instrumentsResult;
             if (instrumentsError) {
                 console.error('Errore nel recupero delle descrizioni:', instrumentsError);
                 showLoadError('Errore nel caricamento delle descrizioni dei titoli.');
@@ -1750,21 +1814,14 @@
                 return;
             }
 
-            const descriptions = new Map(instruments.map(instrument =>
-                [instrument.ticker, instrument.description || '']
-            ));
-            activePortfolioId = portfolioId;
-            const records = prices.map(record => ({
-                ...record,
-                price: Number(record.price),
-                description: descriptions.get(record.ticker) || ''
-            }));
-            summaries = getSummaries(records, quantities, averagePurchasePrices);
-            renderPortfolioMetrics(summaries);
-            selectedTickers = new Set();
-            const firstTickerWithPrices = summaries.find(summary => Number.isFinite(summary.price));
-            if (firstTickerWithPrices) selectedTickers.add(firstTickerWithPrices.ticker);
-            renderChart(records, dividends);
+            const portfolioData = {
+                positions: allPositions,
+                prices,
+                dividends,
+                instruments
+            };
+            cachePortfolioData(portfolioId, portfolioData);
+            renderPortfolioData(portfolioId, portfolioData);
         }
 
         async function fetchInitialData() {
