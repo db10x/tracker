@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Andamento dei titoli in portafoglio e filtri interattivi per il grafico.">
+    <meta name="description" content="Andamento, transazioni e liquidità dei titoli in portafoglio.">
     <title>Tracker Titoli — Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
@@ -72,6 +72,93 @@
             background: color-mix(in srgb, var(--page) 88%, transparent);
             backdrop-filter: blur(16px);
         }
+
+        .app-layout { display: flex; align-items: stretch; min-height: calc(100vh - 58px); }
+        .app-sidebar {
+            position: sticky;
+            top: 68px;
+            align-self: flex-start;
+            flex: 0 0 210px;
+            max-height: calc(100vh - 86px);
+            padding: 22px 12px;
+            border-right: 1px solid var(--border);
+            background: color-mix(in srgb, var(--surface) 72%, transparent);
+        }
+
+        .app-sidebar nav { display: grid; gap: 7px; }
+        .sidebar-toggle {
+            width: 100%;
+            min-height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 9px;
+            margin-bottom: 12px;
+            padding: 0 11px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: var(--surface-raised);
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .sidebar-toggle svg { width: 16px; height: 16px; flex: 0 0 auto; transition: transform .16s ease; }
+        .sidebar-toggle-label, .nav-label { white-space: nowrap; }
+        .nav-button {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 11px 12px;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--muted);
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color .16s ease, color .16s ease, background .16s ease;
+        }
+
+        .nav-button svg { width: 17px; height: 17px; flex: 0 0 auto; }
+        .nav-button:hover, .nav-button[aria-current="page"] {
+            border-color: var(--border);
+            background: var(--surface-raised);
+            color: var(--text);
+        }
+
+        .nav-button[aria-current="page"] { border-color: rgba(56, 189, 248, .35); color: var(--accent); }
+        .page-content { flex: 1; min-width: 0; }
+        .page-view[hidden] { display: none; }
+        .dashboard-page { display: flex; flex-direction: column; }
+        .app-layout.is-sidebar-compact .app-sidebar { flex-basis: 68px; padding-right: 9px; padding-left: 9px; }
+        .app-layout.is-sidebar-compact .sidebar-toggle { justify-content: center; padding: 0; }
+        .app-layout.is-sidebar-compact .sidebar-toggle svg { transform: rotate(180deg); }
+        .app-layout.is-sidebar-compact .sidebar-toggle-label,
+        .app-layout.is-sidebar-compact .nav-label { display: none; }
+        .app-layout.is-sidebar-compact .nav-button { justify-content: center; padding-right: 0; padding-left: 0; }
+        .app-layout.is-sidebar-compact .nav-button svg { width: 19px; height: 19px; }
+        .app-layout.is-sidebar-compact .nav-button { position: relative; }
+        .app-layout.is-sidebar-compact .nav-button::after {
+            position: absolute;
+            left: calc(100% + 9px);
+            z-index: 8;
+            padding: 6px 8px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface-raised);
+            color: var(--text);
+            content: attr(aria-label);
+            font-size: 10px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .12s ease;
+            white-space: nowrap;
+        }
+
+        .app-layout.is-sidebar-compact .nav-button:hover::after,
+        .app-layout.is-sidebar-compact .nav-button:focus-visible::after { opacity: 1; }
 
         .header-inner, main {
             width: min(1540px, calc(100% - 48px));
@@ -193,6 +280,53 @@
             align-items: stretch;
             gap: 18px;
         }
+
+        .transactions-page { display: flex; flex-direction: column; gap: 14px; }
+        .transactions-page[hidden] { display: none; }
+        .transactions-heading h2, .transactions-panel h3 { margin: 0; font-size: 15px; }
+        .transactions-heading p, .transactions-panel > p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+        .transactions-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.45fr) minmax(300px, .85fr);
+            align-items: start;
+            gap: 18px;
+        }
+
+        .transactions-panel { min-width: 0; padding: 18px; }
+        .table-scroll { width: 100%; margin-top: 14px; overflow: auto; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .transactions-table { min-width: 850px; }
+        .holdings-table { min-width: 440px; }
+        .data-table th, .data-table td {
+            padding: 10px 9px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        .data-table th { color: var(--muted); font-size: 9px; font-weight: 600; white-space: nowrap; }
+        .table-sort-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            text-align: inherit;
+            cursor: pointer;
+        }
+
+        .table-sort-button:hover { color: var(--text); }
+        .table-sort-indicator { min-width: 8px; color: var(--accent); }
+        .data-table td { color: var(--text); }
+        .data-table .numeric-cell { text-align: right; font-family: "SFMono-Regular", Consolas, monospace; white-space: nowrap; }
+        .transaction-ticker { display: block; font-weight: 700; }
+        .transaction-description { display: block; max-width: 220px; margin-top: 3px; color: var(--muted); font-size: 9px; white-space: normal; }
+        .table-empty { padding: 20px !important; color: var(--muted) !important; text-align: center !important; }
+        .cash-row th, .cash-row td { border-top: 1px solid var(--border); border-bottom: 0; font-weight: 700; }
+        .cash-row th { color: var(--text); font-size: 11px; }
 
         .panel { min-width: 0; padding: 19px; }
         .chart-panel, .assets-panel { min-height: 620px; display: flex; flex-direction: column; }
@@ -648,13 +782,39 @@
             font-size: 11px;
         }
 
+        .load-status.is-loading {
+            border-color: var(--border);
+            background: var(--surface-raised);
+            color: var(--muted);
+        }
+
         .load-status[hidden] { display: none; }
 
         @media (max-width: 900px) {
+            .app-layout { min-height: 0; flex-direction: column; }
+            .app-sidebar {
+                position: static;
+                flex: none;
+                width: 100%;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                max-height: none;
+                padding: 8px 14px;
+                border-right: 0;
+                border-bottom: 1px solid var(--border);
+            }
+            .app-sidebar nav { display: flex; flex: 1; gap: 7px; }
+            .sidebar-toggle { width: auto; min-width: 38px; margin: 0; padding: 0 10px; }
+            .sidebar-toggle-label { display: none; }
+            .nav-button { width: auto; min-width: 0; }
+            .page-content { width: 100%; }
             .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
             .chart-panel, .assets-panel { min-height: 0; }
             .assets-panel { max-height: 580px; }
             #asset-list { min-height: 280px; }
+            .transactions-grid { grid-template-columns: minmax(0, 1fr); }
+            .transactions-panel { min-height: 0; }
         }
 
         @media (max-width: 1100px) {
@@ -726,7 +886,8 @@
                 padding: 16px 0;
             }
 
-            .dashboard-grid { flex: 1; min-height: 0; }
+            .dashboard-page, .transactions-page { flex: 1; min-height: 0; }
+            .dashboard-grid, .transactions-grid { flex: 1; min-height: 0; }
             .chart-panel, .assets-panel { height: 100%; min-height: 0; }
             .chart-wrap { min-height: 0; }
             #asset-list { min-height: 0; }
@@ -750,7 +911,7 @@
                 </div>
                 <div>
                     <h1 class="brand-title">Tracker Titoli</h1>
-                    <p class="brand-caption">Panoramica del portafoglio</p>
+                    <p id="brand-caption" class="brand-caption">Panoramica del portafoglio</p>
                 </div>
             </div>
             <section class="portfolio-summary" aria-label="Riepilogo del portafoglio" aria-live="polite">
@@ -797,7 +958,32 @@
         </div>
     </header>
 
-    <main>
+    <div class="app-layout">
+        <aside class="app-sidebar" aria-label="Menu principale">
+            <button id="toggle-sidebar" class="sidebar-toggle" type="button" aria-controls="app-sidebar-nav" aria-expanded="true" aria-label="Compatta menu laterale" title="Compatta menu laterale">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                    <path d="m15 18-6-6 6-6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+                <span class="sidebar-toggle-label">Compatta menu</span>
+            </button>
+            <nav id="app-sidebar-nav" aria-label="Pagine">
+                <button class="nav-button" type="button" data-page-target="overview" aria-label="Panoramica" aria-controls="dashboard-page" aria-current="page">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                        <path d="M3 13h8V3H3v10zm10 8h8V11h-8v10zM13 3v6h8V3h-8zM3 21h8v-6H3v6z" stroke-width="1.7" stroke-linejoin="round"></path>
+                    </svg>
+                    <span class="nav-label">Panoramica</span>
+                </button>
+                <button class="nav-button" type="button" data-page-target="transactions" aria-label="Transazioni" aria-controls="transactions-page">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                        <path d="M4 5h16M4 12h16M4 19h16M8 3v4m8 3v4m-8 3v4" stroke-width="1.7" stroke-linecap="round"></path>
+                    </svg>
+                    <span class="nav-label">Transazioni</span>
+                </button>
+            </nav>
+        </aside>
+        <div class="page-content">
+        <main>
+        <section id="dashboard-page" class="page-view dashboard-page" data-page-view aria-label="Panoramica del portafoglio">
         <div id="dashboard-grid" class="dashboard-grid">
             <section class="panel chart-panel" aria-label="Grafico storico dei titoli">
                 <div class="chart-toolbar">
@@ -891,7 +1077,68 @@
                 </div>
             </section>
         </div>
+        </section>
+        <section id="transactions-page" class="page-view transactions-page" data-page-view aria-label="Transazioni del portafoglio" hidden>
+            <div class="transactions-heading">
+                <h2>Movimenti del portafoglio</h2>
+                <p>Transazioni registrate e situazione corrente ricostruita da acquisti, vendite e trasferimenti.</p>
+            </div>
+            <p id="transactions-status" class="load-status" role="status" aria-live="polite" hidden></p>
+            <div class="transactions-grid">
+                <section class="panel transactions-panel" aria-labelledby="transactions-title">
+                    <h3 id="transactions-title">Transazioni</h3>
+                    <p>Storico del portafoglio selezionato, ordinato dal movimento più recente.</p>
+                    <div class="table-scroll">
+                        <table class="data-table transactions-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col"><button class="table-sort-button" type="button" data-transaction-sort="transaction_date" aria-sort="descending">Data<span class="table-sort-indicator" aria-hidden="true">↓</span></button></th>
+                                    <th scope="col"><button class="table-sort-button" type="button" data-transaction-sort="transaction_type" aria-sort="none">Tipo<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col"><button class="table-sort-button" type="button" data-transaction-sort="ticker" aria-sort="none">Titolo<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col" class="numeric-cell"><button class="table-sort-button" type="button" data-transaction-sort="quantity" aria-sort="none">Quantità<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col" class="numeric-cell"><button class="table-sort-button" type="button" data-transaction-sort="unit_price" aria-sort="none">Prezzo unitario<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col" class="numeric-cell"><button class="table-sort-button" type="button" data-transaction-sort="gross_amount" aria-sort="none">Lordo<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col" class="numeric-cell"><button class="table-sort-button" type="button" data-transaction-sort="charges" aria-sort="none">Commissioni / imposte<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col" class="numeric-cell"><button class="table-sort-button" type="button" data-transaction-sort="net_cash_amount" aria-sort="none">Flusso netto<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col"><button class="table-sort-button" type="button" data-transaction-sort="broker" aria-sort="none">Intermediario<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                </tr>
+                            </thead>
+                            <tbody id="transaction-rows">
+                                <tr><td class="table-empty" colspan="9">Seleziona un portafoglio per caricare le transazioni.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+                <section class="panel transactions-panel" aria-labelledby="holdings-title">
+                    <h3 id="holdings-title">Titoli e liquidità</h3>
+                    <p>Quantità nette per intermediario; il cash somma i flussi netti di ogni intermediario e mostra anche il totale.</p>
+                    <div class="table-scroll">
+                        <table class="data-table holdings-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col"><button class="table-sort-button" type="button" data-holding-sort="broker" aria-sort="ascending">Intermediario<span class="table-sort-indicator" aria-hidden="true">↑</span></button></th>
+                                    <th scope="col"><button class="table-sort-button" type="button" data-holding-sort="ticker" aria-sort="none">Titolo<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                    <th scope="col" class="numeric-cell"><button class="table-sort-button" type="button" data-holding-sort="quantity" aria-sort="none">Quantità attuale<span class="table-sort-indicator" aria-hidden="true"></span></button></th>
+                                </tr>
+                            </thead>
+                            <tbody id="holding-rows">
+                                <tr><td class="table-empty" colspan="3">Seleziona un portafoglio per calcolare le posizioni.</td></tr>
+                            </tbody>
+                            <tfoot id="cash-rows">
+                                <tr class="cash-row">
+                                    <th scope="row">—</th>
+                                    <th scope="row">Cash disponibile</th>
+                                    <td class="numeric-cell">—</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </section>
     </main>
+        </div>
+    </div>
 
     <script>
         const SUPABASE_URL = 'https://wbwwjwfhgvrwtoaitleh.supabase.co';
@@ -904,9 +1151,14 @@
 
         let chartInstance = null;
         let portfolioRequestId = 0;
+        let transactionRequestId = 0;
         let activePortfolioId = '';
         const portfolioDataCache = new Map();
+        const transactionDataCache = new Map();
+        let activePage = 'overview';
         let summaries = [];
+        let transactionSort = { key: 'transaction_date', direction: 'desc' };
+        let holdingSort = { key: 'broker', direction: 'asc' };
         let selectedTickers = new Set();
         let selectedRange = 'all';
         let percentageMode = false;
@@ -919,6 +1171,10 @@
             useGrouping: true,
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
+        });
+        const quantityFormat = new Intl.NumberFormat('it-IT', {
+            useGrouping: true,
+            maximumFractionDigits: 8
         });
         function isDarkTheme() {
             return document.documentElement.dataset.theme === 'dark';
@@ -1879,6 +2135,297 @@
             }
         }
 
+        function setTransactionsStatus(message, isLoading = false) {
+            const status = document.getElementById('transactions-status');
+            status.textContent = message;
+            status.hidden = !message;
+            status.classList.toggle('is-loading', isLoading);
+        }
+
+        function createTableCell(text, className = '') {
+            const cell = document.createElement('td');
+            cell.textContent = text;
+            if (className) cell.className = className;
+            return cell;
+        }
+
+        function compareSortValues(left, right) {
+            if (left === null || left === undefined || left === '') return right === null || right === undefined || right === '' ? 0 : 1;
+            if (right === null || right === undefined || right === '') return -1;
+            if (typeof left === 'number' && typeof right === 'number') return left - right;
+            return String(left).localeCompare(String(right), 'it', { numeric: true, sensitivity: 'base' });
+        }
+
+        function updateTableSortIndicators(selector, sortState, keyAttribute) {
+            document.querySelectorAll(selector).forEach(button => {
+                const active = button.dataset[keyAttribute] === sortState.key;
+                const indicator = button.querySelector('.table-sort-indicator');
+                button.setAttribute('aria-sort', active
+                    ? sortState.direction === 'asc' ? 'ascending' : 'descending'
+                    : 'none');
+                indicator.textContent = active ? sortState.direction === 'asc' ? '↑' : '↓' : '';
+            });
+        }
+
+        function renderTransactionData({ transactions, brokers, instruments }) {
+            const brokerNames = new Map(brokers.map(broker => [String(broker.id), broker.name]));
+            const instrumentDetails = new Map(instruments.map(instrument => [
+                instrument.ticker,
+                instrument.description || ''
+            ]));
+            const transactionRows = document.getElementById('transaction-rows');
+            transactionRows.replaceChildren();
+
+            const typeLabels = {
+                BUY: 'Acquisto',
+                SELL: 'Vendita',
+                DIVIDEND: 'Dividendo / cedola',
+                FEE: 'Commissione',
+                TAX: 'Imposta',
+                DEPOSIT: 'Versamento',
+                WITHDRAWAL: 'Prelievo',
+                TRANSFER_OUT: 'Trasferimento in uscita',
+                TRANSFER_IN: 'Trasferimento in entrata'
+            };
+            const orderedTransactions = [...transactions].sort((left, right) => {
+                const getValue = transaction => {
+                    if (transactionSort.key === 'broker') return brokerNames.get(String(transaction.broker_id)) || '';
+                    if (transactionSort.key === 'transaction_type') {
+                        return typeLabels[transaction.transaction_type] || transaction.transaction_type;
+                    }
+                    if (transactionSort.key === 'ticker') return transaction.ticker || '';
+                    if (transactionSort.key === 'charges') {
+                        return Number(transaction.fees || 0) + Number(transaction.taxes || 0);
+                    }
+                    const value = transaction[transactionSort.key];
+                    return value === null || value === undefined ? null
+                        : ['quantity', 'unit_price', 'gross_amount', 'net_cash_amount'].includes(transactionSort.key)
+                            ? Number(value)
+                            : value;
+                };
+                const comparison = compareSortValues(getValue(left), getValue(right));
+                if (comparison) return comparison * (transactionSort.direction === 'asc' ? 1 : -1);
+                return Number(right.id) - Number(left.id);
+            });
+            updateTableSortIndicators('[data-transaction-sort]', transactionSort, 'transactionSort');
+
+            if (orderedTransactions.length === 0) {
+                const row = document.createElement('tr');
+                const cell = createTableCell('Nessuna transazione registrata per questo portafoglio.', 'table-empty');
+                cell.colSpan = 9;
+                row.appendChild(cell);
+                transactionRows.appendChild(row);
+            } else {
+                orderedTransactions.forEach(transaction => {
+                    const row = document.createElement('tr');
+                    const ticker = transaction.ticker || '';
+                    const titleCell = document.createElement('td');
+                    if (ticker) {
+                        const tickerLabel = document.createElement('span');
+                        tickerLabel.className = 'transaction-ticker';
+                        tickerLabel.textContent = ticker;
+                        titleCell.appendChild(tickerLabel);
+                        const description = instrumentDetails.get(ticker);
+                        if (description) {
+                            const descriptionLabel = document.createElement('span');
+                            descriptionLabel.className = 'transaction-description';
+                            descriptionLabel.textContent = description;
+                            titleCell.appendChild(descriptionLabel);
+                        }
+                    } else {
+                        titleCell.textContent = '—';
+                    }
+
+                    const fees = Number(transaction.fees || 0);
+                    const taxes = Number(transaction.taxes || 0);
+                    const charges = Number.isFinite(fees + taxes) ? `${numberFormat.format(fees + taxes)} €` : '—';
+                    const date = new Date(`${transaction.transaction_date}T00:00:00`);
+                    row.append(
+                        createTableCell(Number.isNaN(date.getTime()) ? transaction.transaction_date : date.toLocaleDateString('it-IT')),
+                        createTableCell(typeLabels[transaction.transaction_type] || transaction.transaction_type),
+                        titleCell,
+                        createTableCell(transaction.quantity == null ? '—' : quantityFormat.format(Number(transaction.quantity)), 'numeric-cell'),
+                        createTableCell(transaction.unit_price == null ? '—' : `${numberFormat.format(Number(transaction.unit_price))} €`, 'numeric-cell'),
+                        createTableCell(`${numberFormat.format(Number(transaction.gross_amount))} €`, 'numeric-cell'),
+                        createTableCell(charges, 'numeric-cell'),
+                        createTableCell(transaction.net_cash_amount == null
+                            ? '—'
+                            : `${formatSignedCurrency(Number(transaction.net_cash_amount))}`, 'numeric-cell'),
+                        createTableCell(brokerNames.get(String(transaction.broker_id)) || '—')
+                    );
+                    transactionRows.appendChild(row);
+                });
+            }
+
+            const quantities = new Map();
+            const cashBalances = new Map();
+            transactions.forEach(transaction => {
+                const brokerId = String(transaction.broker_id);
+                if (!cashBalances.has(brokerId)) cashBalances.set(brokerId, 0);
+                if (transaction.net_cash_amount !== null && transaction.net_cash_amount !== undefined) {
+                    const cashFlow = Number(transaction.net_cash_amount);
+                    if (Number.isFinite(cashFlow)) {
+                        cashBalances.set(brokerId, cashBalances.get(brokerId) + cashFlow);
+                    }
+                }
+
+                const quantity = Number(transaction.quantity);
+                if (!transaction.ticker || !Number.isFinite(quantity)) return;
+                const key = `${transaction.broker_id}:${transaction.ticker}`;
+                const holding = quantities.get(key) || {
+                    brokerId: transaction.broker_id,
+                    ticker: transaction.ticker,
+                    quantity: 0
+                };
+                if (transaction.transaction_type === 'BUY' || transaction.transaction_type === 'TRANSFER_IN') {
+                    holding.quantity += quantity;
+                } else if (transaction.transaction_type === 'SELL' || transaction.transaction_type === 'TRANSFER_OUT') {
+                    holding.quantity -= quantity;
+                }
+                quantities.set(key, holding);
+            });
+
+            const holdingRows = document.getElementById('holding-rows');
+            holdingRows.replaceChildren();
+            const holdings = [...quantities.values()]
+                .map(holding => ({ ...holding, quantity: Math.round(holding.quantity * 1e8) / 1e8 }))
+                .filter(holding => Math.abs(holding.quantity) >= 1e-8)
+                .sort((left, right) => {
+                    const getValue = holding => holdingSort.key === 'broker'
+                        ? brokerNames.get(String(holding.brokerId)) || ''
+                        : holding[holdingSort.key];
+                    const comparison = compareSortValues(getValue(left), getValue(right));
+                    if (comparison) return comparison * (holdingSort.direction === 'asc' ? 1 : -1);
+                    return left.ticker.localeCompare(right.ticker, 'it');
+                });
+            updateTableSortIndicators('[data-holding-sort]', holdingSort, 'holdingSort');
+
+            if (holdings.length === 0) {
+                const row = document.createElement('tr');
+                const cell = createTableCell('Nessun titolo presente in base alle transazioni registrate.', 'table-empty');
+                cell.colSpan = 3;
+                row.appendChild(cell);
+                holdingRows.appendChild(row);
+            } else {
+                holdings.forEach(holding => {
+                    const row = document.createElement('tr');
+                    const titleCell = document.createElement('td');
+                    const tickerLabel = document.createElement('span');
+                    tickerLabel.className = 'transaction-ticker';
+                    tickerLabel.textContent = holding.ticker;
+                    titleCell.appendChild(tickerLabel);
+                    const description = instrumentDetails.get(holding.ticker);
+                    if (description) {
+                        const descriptionLabel = document.createElement('span');
+                        descriptionLabel.className = 'transaction-description';
+                        descriptionLabel.textContent = description;
+                        titleCell.appendChild(descriptionLabel);
+                    }
+                    row.append(
+                        createTableCell(brokerNames.get(String(holding.brokerId)) || '—'),
+                        titleCell,
+                        createTableCell(quantityFormat.format(holding.quantity), 'numeric-cell')
+                    );
+                    holdingRows.appendChild(row);
+                });
+            }
+            const cashRows = document.getElementById('cash-rows');
+            cashRows.replaceChildren();
+            const orderedCashBalances = [...cashBalances.entries()]
+                .sort(([leftId], [rightId]) =>
+                    (brokerNames.get(leftId) || '').localeCompare(brokerNames.get(rightId) || '', 'it')
+                );
+            orderedCashBalances.forEach(([brokerId, balance]) => {
+                const row = document.createElement('tr');
+                row.className = 'cash-row';
+                row.append(
+                    createTableCell(brokerNames.get(brokerId) || '—'),
+                    createTableCell('Cash disponibile'),
+                    createTableCell(`${numberFormat.format(balance)} €`, 'numeric-cell')
+                );
+                cashRows.appendChild(row);
+            });
+            const totalCash = [...cashBalances.values()].reduce((total, balance) => total + balance, 0);
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'cash-row';
+            const totalLabel = document.createElement('th');
+            totalLabel.scope = 'row';
+            totalLabel.colSpan = 2;
+            totalLabel.textContent = 'Totale cash disponibile';
+            totalRow.append(
+                totalLabel,
+                createTableCell(`${numberFormat.format(totalCash)} €`, 'numeric-cell')
+            );
+            cashRows.appendChild(totalRow);
+        }
+
+        async function loadPortfolioTransactions(portfolioId) {
+            if (!portfolioId) return;
+            const requestId = ++transactionRequestId;
+            const cachedData = transactionDataCache.get(String(portfolioId));
+            if (cachedData) {
+                setTransactionsStatus('');
+                renderTransactionData(cachedData);
+                return;
+            }
+
+            setTransactionsStatus('Caricamento delle transazioni…', true);
+            document.getElementById('transaction-rows').replaceChildren();
+            document.getElementById('holding-rows').replaceChildren();
+            document.getElementById('cash-rows').replaceChildren();
+
+            const transactions = [];
+            const pageSize = 1000;
+            let page = 0;
+            while (true) {
+                const from = page * pageSize;
+                const { data, error } = await supabaseClient
+                    .from('portfolio_transactions')
+                    .select('id, transaction_date, transaction_type, ticker, quantity, unit_price, gross_amount, fees, taxes, net_cash_amount, broker_id')
+                    .eq('portfolio_id', portfolioId)
+                    .order('transaction_date', { ascending: true })
+                    .order('id', { ascending: true })
+                    .range(from, from + pageSize - 1);
+                if (requestId !== transactionRequestId) return;
+                if (error) {
+                    console.error('Errore nel recupero delle transazioni del portafoglio:', error);
+                    setTransactionsStatus('Impossibile caricare le transazioni. Verifica i permessi SELECT e la policy RLS per portfolio_transactions.');
+                    return;
+                }
+                transactions.push(...data);
+                if (data.length < pageSize) break;
+                page += 1;
+            }
+
+            const tickers = [...new Set(transactions.map(transaction => transaction.ticker).filter(Boolean))];
+            const [brokersResult, instrumentsResult] = await Promise.all([
+                supabaseClient.from('brokers').select('id, name').order('name', { ascending: true }),
+                tickers.length
+                    ? supabaseClient.from('instruments').select('ticker, description').in('ticker', tickers)
+                    : Promise.resolve({ data: [], error: null })
+            ]);
+            if (requestId !== transactionRequestId) return;
+            if (brokersResult.error) {
+                console.error('Errore nel recupero degli intermediari:', brokersResult.error);
+                setTransactionsStatus('Impossibile caricare i nomi degli intermediari. Verifica i permessi SELECT e la policy RLS per brokers.');
+                return;
+            }
+            if (instrumentsResult.error) {
+                console.error('Errore nel recupero delle descrizioni dei titoli:', instrumentsResult.error);
+                setTransactionsStatus('Impossibile caricare le descrizioni dei titoli.');
+                return;
+            }
+
+            const portfolioTransactions = {
+                transactions,
+                brokers: brokersResult.data,
+                instruments: instrumentsResult.data
+            };
+            transactionDataCache.set(String(portfolioId), portfolioTransactions);
+            setTransactionsStatus('');
+            renderTransactionData(portfolioTransactions);
+        }
+
         function getCachedPortfolioData(portfolioId) {
             return portfolioDataCache.get(String(portfolioId)) || null;
         }
@@ -2060,10 +2607,97 @@
                 select.appendChild(option);
             });
             select.disabled = false;
-            select.addEventListener('change', event => handlePortfolioChange(event.target.value));
+            select.addEventListener('change', event => {
+                handlePortfolioChange(event.target.value);
+                if (activePage === 'transactions') loadPortfolioTransactions(event.target.value);
+            });
             select.value = String(portfolios[0].id);
             await handlePortfolioChange(select.value);
         }
+
+        document.querySelectorAll('[data-page-target]').forEach(button => {
+            button.addEventListener('click', () => {
+                const nextPage = button.dataset.pageTarget;
+                activePage = nextPage;
+                const targetPageId = nextPage === 'overview' ? 'dashboard-page' : 'transactions-page';
+                document.getElementById('brand-caption').textContent = nextPage === 'overview'
+                    ? 'Panoramica del portafoglio'
+                    : 'Transazioni e liquidità';
+                document.querySelectorAll('[data-page-target]').forEach(navButton => {
+                    if (navButton.dataset.pageTarget === nextPage) {
+                        navButton.setAttribute('aria-current', 'page');
+                    } else {
+                        navButton.removeAttribute('aria-current');
+                    }
+                });
+                document.querySelectorAll('[data-page-view]').forEach(page => {
+                    page.hidden = page.id !== targetPageId;
+                });
+
+                if (nextPage === 'transactions') {
+                    loadPortfolioTransactions(document.getElementById('portfolio-select').value);
+                } else if (chartInstance) {
+                    requestAnimationFrame(() => chartInstance.resize());
+                }
+            });
+        });
+
+        const appLayout = document.querySelector('.app-layout');
+        const sidebarToggle = document.getElementById('toggle-sidebar');
+        function setSidebarCompact(compact) {
+            appLayout.classList.toggle('is-sidebar-compact', compact);
+            sidebarToggle.setAttribute('aria-expanded', String(!compact));
+            const label = compact ? 'Espandi menu laterale' : 'Compatta menu laterale';
+            sidebarToggle.setAttribute('aria-label', label);
+            sidebarToggle.title = label;
+            sidebarToggle.querySelector('.sidebar-toggle-label').textContent =
+                compact ? 'Espandi menu' : 'Compatta menu';
+        }
+
+        try {
+            setSidebarCompact(localStorage.getItem('tracker-sidebar-compact') === 'true');
+        } catch (error) {
+            console.error('Impossibile leggere lo stato del menu laterale:', error);
+        }
+        sidebarToggle.addEventListener('click', () => {
+            const compact = !appLayout.classList.contains('is-sidebar-compact');
+            setSidebarCompact(compact);
+            try {
+                localStorage.setItem('tracker-sidebar-compact', String(compact));
+            } catch (error) {
+                console.error('Impossibile salvare lo stato del menu laterale:', error);
+            }
+        });
+
+        document.querySelectorAll('[data-transaction-sort]').forEach(button => {
+            button.addEventListener('click', () => {
+                const key = button.dataset.transactionSort;
+                transactionSort = {
+                    key,
+                    direction: transactionSort.key === key && transactionSort.direction === 'asc'
+                        ? 'desc'
+                        : 'asc'
+                };
+                const cachedData = transactionDataCache.get(String(activePortfolioId));
+                if (cachedData) renderTransactionData(cachedData);
+                else updateTableSortIndicators('[data-transaction-sort]', transactionSort, 'transactionSort');
+            });
+        });
+
+        document.querySelectorAll('[data-holding-sort]').forEach(button => {
+            button.addEventListener('click', () => {
+                const key = button.dataset.holdingSort;
+                holdingSort = {
+                    key,
+                    direction: holdingSort.key === key && holdingSort.direction === 'asc'
+                        ? 'desc'
+                        : 'asc'
+                };
+                const cachedData = transactionDataCache.get(String(activePortfolioId));
+                if (cachedData) renderTransactionData(cachedData);
+                else updateTableSortIndicators('[data-holding-sort]', holdingSort, 'holdingSort');
+            });
+        });
 
         document.querySelectorAll('[data-range]').forEach(button => {
             button.addEventListener('click', () => setChartRange(button.dataset.range));
